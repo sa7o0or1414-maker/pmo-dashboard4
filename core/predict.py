@@ -14,7 +14,7 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     today = pd.Timestamp.today().normalize()
 
-    # derived signals
+    # -------- مؤشرات مشتقة --------
     if "end_date" in out.columns:
         out["days_to_deadline"] = (out["end_date"] - today).dt.days
     else:
@@ -23,66 +23,69 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     status = out["status"] if "status" in out.columns else ""
     out["status_has_delay"] = status.apply(_contains_delay).astype(int)
 
-    # actual delayed logic
+    # -------- متأخر فعليًا --------
     actual = pd.Series([0] * len(out), index=out.index)
+
     if "status" in out.columns:
         actual = actual | out["status_has_delay"].astype(bool)
+
     if "end_date" in out.columns:
-        # overdue and not completed
         prog = out["progress"] if "progress" in out.columns else pd.Series([pd.NA]*len(out), index=out.index)
         not_done = prog.fillna(0) < 100
         overdue = out["days_to_deadline"].fillna(999999) < 0
         actual = actual | (overdue & not_done)
+
     out["is_delayed_actual"] = actual.astype(int)
 
-    # predicted delay risk (rule-based)
-    reasons_list = []
+    # -------- التنبؤ بالتأخير (ذكي بدون ML) --------
     risks = []
+    reasons_list = []
 
     for _, row in out.iterrows():
         score = 0.0
         reasons = []
 
-        # 1) status hint
-        if "status_has_delay" in out.columns and row.get("status_has_delay", 0) == 1:
+        # 1) حالة المشروع تشير إلى تأخير
+        if row.get("status_has_delay", 0) == 1:
             score += 0.55
-            reasons.append("Status indicates delay")
+            reasons.append("حالة المشروع تشير إلى تأخير")
 
-        # 2) deadline proximity/overdue
+        # 2) قرب أو تجاوز الموعد النهائي
         dtd = row.get("days_to_deadline", pd.NA)
         if pd.notna(dtd):
             if dtd < 0:
                 score += 0.35
-                reasons.append("Past deadline")
+                reasons.append("تجاوز الموعد النهائي")
             elif dtd <= 14:
                 score += 0.25
-                reasons.append("Deadline within 14 days")
+                reasons.append("الموعد النهائي خلال أقل من 14 يوم")
             elif dtd <= 30:
                 score += 0.15
-                reasons.append("Deadline within 30 days")
+                reasons.append("الموعد النهائي خلال أقل من 30 يوم")
 
-        # 3) low progress
+        # 3) نسبة إنجاز منخفضة
         prog = row.get("progress", pd.NA)
         if pd.notna(prog):
             if prog < 30:
                 score += 0.25
-                reasons.append("Low progress (<30%)")
+                reasons.append("نسبة الإنجاز أقل من 30٪")
             elif prog < 60:
                 score += 0.12
-                reasons.append("Moderate progress (<60%)")
+                reasons.append("نسبة الإنجاز أقل من 60٪")
 
-        # clamp
+        # ضبط النتيجة
         score = max(0.0, min(1.0, score))
+
         if not reasons:
-            reasons = ["Insufficient indicators"]
+            reasons = ["لا توجد مؤشرات كافية حاليًا"]
 
         risks.append(score)
-        reasons_list.append(" / ".join(reasons))
+        reasons_list.append(" • ".join(reasons))
 
     out["delay_risk"] = risks
     out["delay_reason"] = reasons_list
 
-    # predicted delayed flag
+    # -------- متوقع تأخره --------
     out["is_delayed_predicted"] = (out["delay_risk"] >= 0.6).astype(int)
 
     return out
