@@ -3,6 +3,8 @@ import pandas as pd
 import plotly.express as px
 import importlib
 
+from core.ui import hide_streamlit_default_nav
+hide_streamlit_default_nav()
 from core.data_io import prepare_dashboard_data
 from core.sidebar import render_sidebar
 from core.config import ensure_defaults, load_config, apply_branding
