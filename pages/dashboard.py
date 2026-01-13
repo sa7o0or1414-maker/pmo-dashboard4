@@ -2,16 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# 1) لازم أول سطر Streamlit
+# لازم يكون أول أمر Streamlit
 st.set_page_config(page_title="الصفحة الرئيسية", layout="wide")
 
 from core.ui import hide_streamlit_default_nav
 from core.sidebar import render_sidebar
 from core.data_io import load_latest_data
 
-# 2) اخفاء قائمة ستريملت الافتراضية (app/dashboard...)
 hide_streamlit_default_nav()
-# 3) سايدبارنا العربي
 render_sidebar()
 
 # -----------------------------
@@ -24,7 +22,6 @@ def find_col(df, keywords):
             return c
     return None
 
-
 def fmt_big(n):
     try:
         n = float(n)
@@ -36,18 +33,34 @@ def fmt_big(n):
     except Exception:
         return "—"
 
-
 def normalize_percent(series: pd.Series) -> pd.Series:
     s = pd.to_numeric(series, errors="coerce")
     if s.dropna().between(0, 1).mean() > 0.6:
         s = s * 100
     return s
 
+def safe_for_display(d: pd.DataFrame, max_len: int = 400) -> pd.DataFrame:
+    """
+    تحويل DataFrame لنسخة آمنة للعرض بدون مشاكل Arrow:
+    - إعادة ضبط الـ index
+    - تحويل datetime/timedelta/period/object إلى نص
+    - قص النصوص الطويلة
+    """
+    out = d.copy().reset_index(drop=True)
 
-def safe_for_display(d: pd.DataFrame, max_len: int = 300) -> pd.DataFrame:
-    """تحويل أي قيم غير قابلة للتحويل في Streamlit/Arrow إلى نص آمن."""
-    out = d.copy()
+    # حوّل datetime / timedelta / period إلى نص
+    for c in out.columns:
+        try:
+            if pd.api.types.is_datetime64_any_dtype(out[c]):
+                out[c] = out[c].dt.strftime("%Y-%m-%d")
+            elif pd.api.types.is_timedelta64_dtype(out[c]):
+                out[c] = out[c].astype(str)
+            elif pd.api.types.is_period_dtype(out[c]):
+                out[c] = out[c].astype(str)
+        except Exception:
+            pass
 
+    # الأعمدة غير الرقمية نحولها نص آمن
     for c in out.columns:
         if pd.api.types.is_numeric_dtype(out[c]):
             continue
@@ -61,17 +74,17 @@ def safe_for_display(d: pd.DataFrame, max_len: int = 300) -> pd.DataFrame:
             except Exception:
                 pass
 
-            if isinstance(x, (list, dict, set, tuple)):
-                s = str(x)
-            else:
-                try:
-                    import numpy as np
-                    if isinstance(x, np.ndarray):
-                        s = str(x.tolist())
-                    else:
-                        s = str(x)
-                except Exception:
+            # أي شيء معقد -> نص
+            try:
+                import numpy as np
+                if isinstance(x, np.ndarray):
+                    s = str(x.tolist())
+                elif isinstance(x, (list, dict, set, tuple)):
                     s = str(x)
+                else:
+                    s = str(x)
+            except Exception:
+                s = str(x)
 
             if len(s) > max_len:
                 s = s[:max_len] + "..."
@@ -81,9 +94,20 @@ def safe_for_display(d: pd.DataFrame, max_len: int = 300) -> pd.DataFrame:
 
     return out
 
+def show_readonly_table(title: str, d: pd.DataFrame):
+    st.subheader(title)
+    d2 = safe_for_display(d)
+    # data_editor read-only (أكثر استقرارًا من dataframe مع pyarrow في حالات معينة)
+    st.data_editor(
+        d2,
+        use_container_width=True,
+        height=420,
+        disabled=True,
+        hide_index=True
+    )
 
 # -----------------------------
-# Load latest saved data
+# Load data
 # -----------------------------
 df = load_latest_data()
 if df is None or df.empty:
@@ -102,7 +126,7 @@ progress_col = find_col(df, ["progress", "إنجاز", "انجاز", "%"])
 spend_ratio_col = find_col(df, ["نسبة الصرف", "spend ratio", "spending", "صرف"])
 
 # -----------------------------
-# Filters (على الصفحة نفسها)
+# Filters
 # -----------------------------
 st.markdown("## الفلاتر")
 c1, c2, c3 = st.columns(3)
@@ -140,7 +164,6 @@ with c3:
 # KPIs
 # -----------------------------
 total_projects = len(fdf)
-
 total_value = pd.to_numeric(fdf[value_col], errors="coerce").sum() if value_col else 0
 
 avg_progress = 0
@@ -148,33 +171,25 @@ if progress_col:
     p = normalize_percent(fdf[progress_col])
     avg_progress = float(p.mean()) if p.notna().any() else 0
 
-# نسبة الصرف من عمود نسبة الصرف إن وجد
 spend_ratio = 0
 if spend_ratio_col:
     sr = normalize_percent(fdf[spend_ratio_col])
     spend_ratio = float(sr.mean()) / 100 if sr.notna().any() else 0
 
-# -----------------------------
-# Build "Actual delayed" and "Predicted delayed"
-# -----------------------------
+# Actual delayed
 actual_df = pd.DataFrame()
-pred_df = pd.DataFrame()
-
-# المتأخرة فعليًا: أي حالة تحتوي (متأخر/متعثر)
 if status_col:
     actual_mask = fdf[status_col].astype(str).str.contains("متأخر|متعثر|delayed|delay", case=False, na=False)
     actual_df = fdf[actual_mask].copy()
 
-# المتوقع تأخرها: تحليل بسيط (Risk Score) + سبب بالعربي
+# Predicted delayed (risk score + reasons)
 tmp = fdf.copy()
 risk = pd.Series(0.0, index=tmp.index)
 
-# انخفاض الإنجاز يرفع المخاطر
 if progress_col:
     prog = normalize_percent(tmp[progress_col]).fillna(0)
     risk += (100 - prog) * 0.55
 
-# نصوص داخل أي أعمدة نصية تعطي مؤشر
 bad_words = ["تأخير", "متأخر", "تعثر", "معوقات", "تحديات", "مشكلة", "delay", "risk", "issue", "problem"]
 text_cols = [c for c in tmp.columns if tmp[c].dtype == object]
 
@@ -186,7 +201,6 @@ def text_penalty(row):
 if text_cols:
     risk += tmp[text_cols].fillna("").apply(text_penalty, axis=1)
 
-# قيمة عالية بدون تقدم يرفع المخاطر
 if value_col and progress_col:
     val = pd.to_numeric(tmp[value_col], errors="coerce").fillna(0)
     prog = normalize_percent(tmp[progress_col]).fillna(0)
@@ -202,7 +216,6 @@ def classify_and_reason(row):
     score = float(row.get("risk_score", 0))
     reasons = []
 
-    # الإنجاز
     if progress_col:
         p = pd.to_numeric(row.get(progress_col, None), errors="coerce")
         if pd.notna(p):
@@ -213,13 +226,11 @@ def classify_and_reason(row):
             elif p < 50:
                 reasons.append("نسبة الإنجاز منخفضة")
 
-    # كلمات سلبية بالنص
     if text_cols:
         joined = " ".join([str(row.get(c, "")) for c in text_cols]).lower()
         if any(w in joined for w in bad_words):
             reasons.append("وجود إشارات نصية لمشاكل أو تأخير")
 
-    # قيمة عالية
     if value_col:
         v = pd.to_numeric(row.get(value_col, None), errors="coerce")
         try:
@@ -245,19 +256,14 @@ def classify_and_reason(row):
     return pd.Series([level, short_reason, long_reason])
 
 tmp[["مستوى الخطر", "سبب مختصر", "سبب تفصيلي"]] = tmp.apply(classify_and_reason, axis=1)
-
 pred_df = tmp[tmp["risk_score"] >= 40].copy()
 
-# counts
 actual_count = len(actual_df)
 pred_count = len(pred_df)
 
-# -----------------------------
-# KPI Cards UI
-# -----------------------------
+# KPI cards
 st.markdown("## لوحة المعلومات")
 k1, k2, k3, k4, k5 = st.columns(5)
-
 k1.metric("عدد المشاريع", total_projects)
 k2.metric("إجمالي قيمة المشاريع", fmt_big(total_value))
 k3.metric("متوسط الإنجاز", f"{avg_progress:.1f}%")
@@ -266,9 +272,7 @@ k5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%" if spend_ratio else "
 
 st.markdown("---")
 
-# -----------------------------
-# Toggle Icons (فتح/قفل)
-# -----------------------------
+# Toggle icons
 if "open_panel" not in st.session_state:
     st.session_state.open_panel = None
 
@@ -276,42 +280,34 @@ def toggle(panel_name):
     st.session_state.open_panel = None if st.session_state.open_panel == panel_name else panel_name
 
 b1, b2 = st.columns(2)
-
 with b1:
     if st.button(f"🔴 المشاريع المتأخرة فعليًا ({actual_count})", use_container_width=True):
         toggle("actual")
-
 with b2:
     if st.button(f"🟠 المشاريع المتوقع تأخرها ({pred_count})", use_container_width=True):
         toggle("pred")
 
-# -----------------------------
 # Panels
-# -----------------------------
 if st.session_state.open_panel == "actual":
-    st.subheader("المشاريع المتأخرة فعليًا")
     if actual_df.empty:
         st.success("لا توجد مشاريع متأخرة فعليًا حسب الفلاتر الحالية")
     else:
         show_cols = [c for c in [project_col, entity_col, municipality_col, status_col, progress_col, value_col] if c]
         table_df = actual_df[show_cols] if show_cols else actual_df
-        st.dataframe(safe_for_display(table_df), use_container_width=True, height=420)
+        show_readonly_table("المشاريع المتأخرة فعليًا", table_df)
 
 if st.session_state.open_panel == "pred":
-    st.subheader("المشاريع المتوقع تأخرها (تحليل ذكي)")
     if pred_df.empty:
         st.success("لا توجد مشاريع عالية/متوسطة المخاطر حسب الفلاتر الحالية")
     else:
         cols = [c for c in [project_col, entity_col, municipality_col, status_col] if c]
         extra = ["risk_score", "مستوى الخطر", "سبب مختصر", "سبب تفصيلي"]
         cols = cols + [c for c in extra if c in pred_df.columns]
-        st.dataframe(safe_for_display(pred_df[cols]), use_container_width=True, height=420)
+        show_readonly_table("المشاريع المتوقع تأخرها (تحليل ذكي)", pred_df[cols])
 
 st.markdown("---")
 
-# -----------------------------
-# Charts (مثل أول)
-# -----------------------------
+# Charts
 st.markdown("## التحليلات")
 left, right = st.columns(2)
 
@@ -353,4 +349,9 @@ with right:
         st.info("لا يوجد عمود للجهة/البلدية أو لا توجد بيانات بعد الفلاتر.")
 
 with st.expander("عرض البيانات بعد الفلاتر"):
-    st.dataframe(safe_for_display(fdf), use_container_width=True)
+    st.data_editor(
+        safe_for_display(fdf),
+        use_container_width=True,
+        disabled=True,
+        hide_index=True
+    )
