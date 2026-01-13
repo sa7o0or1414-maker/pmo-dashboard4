@@ -7,17 +7,9 @@ DELAY_WORDS = [
     "متعثر", "متوقف", "حرج", "خطر"
 ]
 
-RISK_KEYWORDS = {
-    "schedule": ["موعد", "تاريخ", "deadline", "due", "schedule"],
-    "progress": ["إنجاز", "تقدم", "progress", "completion"],
-    "resource": ["مورد", "موارد", "resource", "contractor", "vendor"],
-    "financial": ["ميزانية", "تكلفة", "budget", "cost", "مالي"],
-}
-
-# أوزان حسب نوع المشروع (حتى لو الاسم مختلف)
 PROJECT_TYPE_WEIGHTS = {
     "إنشائي": 1.3,
-    "بنية تحتية": 1.3,
+    "بنية": 1.3,
     "تقني": 1.1,
     "تقنية": 1.1,
     "رقمي": 1.1,
@@ -30,7 +22,6 @@ def _text_contains_any(text, keywords):
     return any(k.lower() in t for k in keywords)
 
 def _detect_project_weight(row):
-    # يبحث في كل الأعمدة النصية عن نوع المشروع
     weight = 1.0
     for val in row.values:
         if isinstance(val, str):
@@ -39,6 +30,15 @@ def _detect_project_weight(row):
                     weight = max(weight, w)
     return weight
 
+def _detect_end_date_column(df: pd.DataFrame):
+    """اختيار عمود تاريخ واحد فقط للحساب"""
+    for col in df.columns:
+        name = col.lower()
+        if any(k in name for k in ["end", "due", "deadline", "تاريخ الانتهاء", "موعد"]):
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                return col
+    return None
+
 def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
@@ -46,37 +46,38 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     today = pd.Timestamp.today().normalize()
 
-    # -------- تحليل عام لكل الأعمدة --------
-    text_risk_hits = []
-    for idx, row in out.iterrows():
+    # -------- إشارات نصية من كل الأعمدة --------
+    text_risk_signal = []
+    for _, row in out.iterrows():
         hit = False
         for val in row.values:
             if isinstance(val, str) and _text_contains_any(val, DELAY_WORDS):
                 hit = True
                 break
-        text_risk_hits.append(1 if hit else 0)
+        text_risk_signal.append(1 if hit else 0)
 
-    out["text_risk_signal"] = text_risk_hits
+    out["text_risk_signal"] = text_risk_signal
 
-    # -------- مواعيد --------
-    if "end_date" in out.columns:
-        out["days_to_deadline"] = (out["end_date"] - today).dt.days
+    # -------- حساب الأيام للموعد النهائي (بأمان) --------
+    end_col = _detect_end_date_column(out)
+
+    if end_col:
+        end_series = pd.to_datetime(out[end_col], errors="coerce")
+        out["days_to_deadline"] = (end_series - today).dt.days
     else:
         out["days_to_deadline"] = pd.NA
 
     # -------- متأخر فعليًا --------
-    actual = pd.Series([0] * len(out), index=out.index)
+    actual = (out["text_risk_signal"] == 1)
 
     if "days_to_deadline" in out.columns:
-        overdue = out["days_to_deadline"].fillna(999999) < 0
-        actual = actual | overdue
+        actual = actual | (out["days_to_deadline"].fillna(999999) < 0)
 
-    actual = actual | (out["text_risk_signal"] == 1)
     out["is_delayed_actual"] = actual.astype(int)
 
     # -------- التنبؤ + الأسباب --------
     risks = []
-    risk_levels = []
+    levels = []
     colors = []
     short_reasons = []
     detailed_reasons = []
@@ -86,15 +87,12 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
         score = 0.0
         reasons = []
 
-        # وزن حسب نوع المشروع
-        project_weight = _detect_project_weight(row)
+        weight = _detect_project_weight(row)
 
-        # 1) إشارات نصية
         if row.get("text_risk_signal", 0) == 1:
             score += 0.35
             reasons.append("وجود إشارات تأخير في بيانات المشروع")
 
-        # 2) الموعد النهائي
         dtd = row.get("days_to_deadline", pd.NA)
         if pd.notna(dtd):
             if dtd < 0:
@@ -107,7 +105,6 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
                 score += 0.15
                 reasons.append("الموعد النهائي خلال 30 يوم")
 
-        # 3) نسبة الإنجاز
         prog = row.get("progress", pd.NA)
         if pd.notna(prog):
             if prog < 30:
@@ -117,11 +114,8 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
                 score += 0.15
                 reasons.append("نسبة الإنجاز أقل من المتوقع (<60٪)")
 
-        # تطبيق الوزن
-        score *= project_weight
-        score = max(0.0, min(1.0, score))
+        score = min(max(score * weight, 0.0), 1.0)
 
-        # مستوى المخاطر
         if score >= 0.75:
             level = "عالي"
             color = "🔴"
@@ -139,14 +133,14 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
             reasons = ["لا توجد مؤشرات خطورة واضحة حاليًا"]
 
         risks.append(score)
-        risk_levels.append(level)
+        levels.append(level)
         colors.append(color)
         short_reasons.append(reasons[0])
         detailed_reasons.append(" • ".join(reasons))
         actions.append(action)
 
     out["delay_risk"] = risks
-    out["risk_level"] = risk_levels
+    out["risk_level"] = levels
     out["risk_color"] = colors
     out["reason_short"] = short_reasons
     out["reason_detail"] = detailed_reasons
