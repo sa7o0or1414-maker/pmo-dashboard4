@@ -23,7 +23,7 @@ if df is None or df.empty:
 
 df = build_delay_outputs(df)
 
-# --- Filters in sidebar (Arabic) ---
+# ---------------- Filters ----------------
 st.sidebar.markdown("---")
 st.sidebar.markdown("### الفلاتر")
 
@@ -45,7 +45,7 @@ if entity != "الكل" and "entity" in fdf.columns:
 if status != "الكل" and "status" in fdf.columns:
     fdf = fdf[fdf["status"] == status]
 
-# --- KPIs ---
+# ---------------- KPIs ----------------
 total_projects = len(fdf)
 total_budget = fdf["budget"].sum() if "budget" in fdf.columns else None
 avg_progress = fdf["progress"].mean() if "progress" in fdf.columns else None
@@ -64,22 +64,73 @@ with c4:
 
 st.markdown("---")
 
-# --- Buttons like Power BI cards (drilldown) ---
+# ---------------- View Mode ----------------
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "overview"
 
 b1, b2, b3 = st.columns(3)
 with b1:
-    if st.button(f"عرض المشاريع المتأخرة فعليًا ({actual_delayed})", use_container_width=True):
+    if st.button(f"المشاريع المتأخرة فعليًا ({actual_delayed})", use_container_width=True):
         st.session_state.view_mode = "actual"
 with b2:
-    if st.button(f"عرض المشاريع المتوقع تأخرها ({pred_delayed})", use_container_width=True):
+    if st.button(f"المشاريع المتوقع تأخرها ({pred_delayed})", use_container_width=True):
         st.session_state.view_mode = "pred"
 with b3:
-    if st.button("عرض الملخص", use_container_width=True):
+    if st.button("ملخص", use_container_width=True):
         st.session_state.view_mode = "overview"
 
-# --- Charts ---
+# ---------------- Drilldown (must appear directly under buttons) ----------------
+st.markdown("### التفاصيل")
+details_anchor = st.empty()  # this ensures the tables show right under the buttons
+
+def show_table(title, tdf, extra_cols=None):
+    if tdf is None or tdf.empty:
+        st.info("لا توجد نتائج حسب الفلاتر الحالية.")
+        return
+
+    # base columns only if they exist
+    base_candidates = ["municipality", "entity", "project", "status", "progress", "end_date"]
+    show_cols = [c for c in base_candidates if c in tdf.columns]
+
+    if extra_cols:
+        for c in extra_cols:
+            if c in tdf.columns and c not in show_cols:
+                show_cols.append(c)
+
+    # if still empty, show all columns (safe fallback)
+    if not show_cols:
+        show_cols = list(tdf.columns)
+
+    # choose a safe sort column
+    sort_col = None
+    for candidate in ["delay_risk", "days_to_deadline", "progress", "project"]:
+        if candidate in tdf.columns:
+            sort_col = candidate
+            break
+    if sort_col is None:
+        sort_col = show_cols[0]
+
+    st.subheader(title)
+    st.dataframe(
+        tdf[show_cols].sort_values(by=sort_col, ascending=False),
+        use_container_width=True
+    )
+
+with details_anchor.container():
+    if st.session_state.view_mode == "actual":
+        actual_df = fdf[fdf["is_delayed_actual"] == 1].copy()
+        show_table("المشاريع المتأخرة فعليًا", actual_df)
+    elif st.session_state.view_mode == "pred":
+        pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
+        show_table("المشاريع المتوقع تأخرها (مع سبب التوقع)", pred_df, extra_cols=["delay_risk", "delay_reason"])
+    else:
+        st.info("اضغطي على أحد الأزرار لعرض التفاصيل هنا مباشرة.")
+
+st.markdown("---")
+
+# ---------------- Full Analysis (below tables) ----------------
+st.subheader("تحليل الملف كامل")
+
 left, right = st.columns(2)
 
 with left:
@@ -88,10 +139,9 @@ with left:
         fig1.update_layout(xaxis_title="حالة المشروع", yaxis_title="العدد")
         st.plotly_chart(fig1, use_container_width=True)
     else:
-        st.info("لا يوجد عمود حالة واضح في الملف لعرض توزيع الحالات.")
+        st.info("لا يوجد عمود (حالة المشروع) واضح في الملف.")
 
 with right:
-    # top delayed by municipality or entity
     if "municipality" in fdf.columns:
         tmp = fdf.groupby("municipality")["is_delayed_actual"].sum().sort_values(ascending=False).head(15).reset_index()
         fig2 = px.bar(tmp, x="municipality", y="is_delayed_actual", title="أكثر البلديات تأخرًا (فعليًا)")
@@ -103,37 +153,8 @@ with right:
         fig2.update_layout(xaxis_title="الجهة", yaxis_title="عدد المشاريع المتأخرة")
         st.plotly_chart(fig2, use_container_width=True)
     else:
-        st.info("لا يوجد عمود بلدية/جهة واضح لعرض الأكثر تأخرًا.")
+        st.info("لا يوجد عمود (بلدية/جهة) واضح في الملف.")
 
 st.markdown("---")
-
-# --- Drilldown tables ---
-cols_base = [c for c in ["municipality", "entity", "project", "status", "progress", "end_date"] if c in fdf.columns]
-
-def show_table(title, tdf, extra_cols=None):
-    st.subheader(title)
-    show_cols = cols_base.copy()
-    if extra_cols:
-        for c in extra_cols:
-            if c in tdf.columns and c not in show_cols:
-                show_cols.append(c)
-
-    if "project" not in show_cols and "project" in tdf.columns:
-        show_cols = ["project"] + show_cols
-
-    st.dataframe(
-        tdf[show_cols].sort_values(by=("delay_risk" if "delay_risk" in tdf.columns else show_cols[0]), ascending=False),
-        use_container_width=True
-    )
-
-if st.session_state.view_mode == "actual":
-    actual_df = fdf[fdf["is_delayed_actual"] == 1].copy()
-    show_table("المشاريع المتأخرة فعليًا", actual_df)
-elif st.session_state.view_mode == "pred":
-    pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
-    # show reasons
-    show_table("المشاريع المتوقع تأخرها (مع سبب التوقع)", pred_df, extra_cols=["delay_risk", "delay_reason"])
-else:
-    st.subheader("ملخص سريع")
-    st.write("استخدمي الأزرار أعلاه لعرض المتأخر فعليًا أو المتوقع تأخره مع الأسباب.")
-    st.caption("ملاحظة: التنبؤ هنا يعتمد على مؤشرات ذكية (الموعد النهائي، نسبة الإنجاز، نص الحالة) بدون نماذج خارجية لضمان الاستقرار على Streamlit Cloud.")
+st.subheader("عرض البيانات")
+st.dataframe(fdf.head(200), use_container_width=True)
