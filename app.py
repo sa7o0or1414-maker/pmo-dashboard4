@@ -1,4 +1,6 @@
 import streamlit as st
+import bootstrap  # noqa: F401
+
 from core.config import ensure_defaults, load_config, apply_branding
 from core.sidebar import render_sidebar
 
