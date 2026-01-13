@@ -252,15 +252,25 @@ with right:
     st.markdown('<div class="section-title">أكثر البلديات/الجهات مشاريع</div>', unsafe_allow_html=True)
     group_col = "municipality" if "municipality" in fdf.columns else ("entity" if "entity" in fdf.columns else None)
     if group_col:
-        top = (
-            fdf[group_col]
-            .fillna("غير محدد")
-            .value_counts()
-            .head(20)
-            .reset_index()
-            .rename(columns={"index": group_col, group_col: "count"})
-        )
-        fig_top = px.bar(top, x=group_col, y="count", title="")
+       top = (
+    fdf[group_col]
+    .fillna("غير محدد")
+    .value_counts()
+    .head(20)
+    .reset_index()
+)
+
+top.columns = ["الاسم", "العدد"]
+
+fig_top = px.bar(
+    top,
+    x="الاسم",
+    y="العدد",
+    text="العدد"
+)
+
+fig_top.update_layout(showlegend=False)
+
         fig_top.update_layout(margin=dict(l=10, r=10, t=10, b=10))
         fig_top.update_xaxes(tickangle=-30)
         st.plotly_chart(fig_top, use_container_width=True)
