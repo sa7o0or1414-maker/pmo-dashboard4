@@ -35,11 +35,16 @@ def fmt_big(n):
     except Exception:
         return "—"
 
+def normalize_percent(series: pd.Series) -> pd.Series:
+    s = pd.to_numeric(series, errors="coerce")
+    if s.dropna().between(0, 1).mean() > 0.6:
+        s = s * 100
+    return s
+
 # -----------------------------
 # Load latest saved data
 # -----------------------------
 df = load_latest_data()
-
 if df is None or df.empty:
     st.warning("الرجاء رفع ملف البيانات أولًا من صفحة (رفع البيانات).")
     st.stop()
@@ -50,12 +55,13 @@ if df is None or df.empty:
 status_col = find_col(df, ["status", "حالة"])
 entity_col = find_col(df, ["entity", "جهة"])
 municipality_col = find_col(df, ["municipality", "بلدية"])
+project_col = find_col(df, ["project", "اسم المشروع", "مشروع", "project name"])
 value_col = find_col(df, ["value", "amount", "budget", "cost", "قيمة", "ميزانية", "تكلفة"])
 progress_col = find_col(df, ["progress", "إنجاز", "انجاز", "%"])
-spend_ratio_col = find_col(df, ["نسبة الصرف", "spend ratio", "spending"])
+spend_ratio_col = find_col(df, ["نسبة الصرف", "spend ratio", "spending", "صرف"])
 
 # -----------------------------
-# Filters (على الصفحة نفسها مثل الصورة)
+# Filters (على الصفحة نفسها)
 # -----------------------------
 st.markdown("## الفلاتر")
 c1, c2, c3 = st.columns(3)
@@ -97,31 +103,155 @@ total_value = pd.to_numeric(fdf[value_col], errors="coerce").sum() if value_col 
 
 avg_progress = 0
 if progress_col:
-    p = pd.to_numeric(fdf[progress_col], errors="coerce")
-    if p.dropna().between(0, 1).mean() > 0.6:
-        p = p * 100
+    p = normalize_percent(fdf[progress_col])
     avg_progress = float(p.mean()) if p.notna().any() else 0
 
-# نسبة الصرف من عمود نسبة الصرف إن وجد
 spend_ratio = 0
 if spend_ratio_col:
-    sr = pd.to_numeric(fdf[spend_ratio_col], errors="coerce")
-    if sr.dropna().between(0, 1).mean() > 0.6:
-        sr = sr * 100
+    sr = normalize_percent(fdf[spend_ratio_col])
     spend_ratio = float(sr.mean()) / 100 if sr.notna().any() else 0
 
-# عدد المتعثرة من حالة المشاريع (لو تحتوي متعثر/متأخر)
-troubled = 0
-if status_col:
-    troubled = fdf[status_col].astype(str).str.contains("متعثر|متأخر", case=False, na=False).sum()
+# -----------------------------
+# Build "Actual delayed" and "Predicted delayed"
+# -----------------------------
+actual_df = pd.DataFrame()
+pred_df = pd.DataFrame()
 
+# المتأخرة فعليًا: أي حالة تحتوي (متأخر/متعثر)
+if status_col:
+    actual_mask = fdf[status_col].astype(str).str.contains("متأخر|متعثر|delayed|delay", case=False, na=False)
+    actual_df = fdf[actual_mask].copy()
+
+# المتوقع تأخرها: تحليل بسيط (Risk Score) + سبب بالعربي
+tmp = fdf.copy()
+risk = pd.Series(0.0, index=tmp.index)
+
+# انخفاض الإنجاز يرفع المخاطر
+if progress_col:
+    prog = normalize_percent(tmp[progress_col]).fillna(0)
+    risk += (100 - prog) * 0.55
+
+# نصوص داخل أي أعمدة نصية تعطي مؤشر
+bad_words = ["تأخير", "متأخر", "تعثر", "معوقات", "تحديات", "مشكلة", "delay", "risk", "issue", "problem"]
+text_cols = [c for c in tmp.columns if tmp[c].dtype == object]
+
+def text_penalty(row):
+    joined = " ".join([str(row[c]) for c in text_cols]) if text_cols else ""
+    joined = joined.lower()
+    return 25 if any(w in joined for w in bad_words) else 0
+
+if text_cols:
+    risk += tmp[text_cols].fillna("").apply(text_penalty, axis=1)
+
+# قيمة عالية بدون تقدم يرفع المخاطر
+if value_col and progress_col:
+    val = pd.to_numeric(tmp[value_col], errors="coerce").fillna(0)
+    prog = normalize_percent(tmp[progress_col]).fillna(0)
+    risk += ((val > val.quantile(0.75)).astype(int) * (prog < 50).astype(int)) * 12
+
+tmp["risk_score"] = risk.clip(0, 100)
+
+def classify_and_reason(row):
+    score = row["risk_score"]
+    reasons = []
+    if progress_col:
+        p = pd.to_numeric(row.get(progress_col, None), errors="coerce")
+        if pd.notna(p):
+            if 0 <= p <= 1:
+                p = p * 100
+            if p < 30:
+                reasons.append("نسبة الإنجاز منخفضة جدًا")
+            elif p < 50:
+                reasons.append("نسبة الإنجاز منخفضة")
+
+    # كلمات سلبية بالنص
+    if text_cols:
+        joined = " ".join([str(row.get(c, "")) for c in text_cols]).lower()
+        if any(w in joined for w in bad_words):
+            reasons.append("وجود إشارات نصية لمشاكل أو تأخير")
+
+    if value_col and progress_col:
+        v = pd.to_numeric(row.get(value_col, None), errors="coerce")
+        if pd.notna(v) and v > tmp[value_col].dropna().quantile(0.75) if value_col in tmp.columns else False:
+            reasons.append("قيمة المشروع عالية مقارنة بمتوسط المشاريع")
+
+    if score >= 70:
+        level = "عالي"
+    elif score >= 40:
+        level = "متوسط"
+    else:
+        level = "منخفض"
+
+    if not reasons:
+        reasons = ["مؤشرات مخاطر عامة من البيانات"]
+
+    short_reason = "، ".join(reasons[:2])
+    long_reason = "؛ ".join(reasons)
+
+    return pd.Series([level, short_reason, long_reason])
+
+tmp[["مستوى الخطر", "سبب مختصر", "سبب تفصيلي"]] = tmp.apply(classify_and_reason, axis=1)
+
+pred_df = tmp[tmp["risk_score"] >= 40].copy()
+
+# counts
+actual_count = len(actual_df)
+pred_count = len(pred_df)
+
+# -----------------------------
+# KPI Cards UI
+# -----------------------------
 st.markdown("## لوحة المعلومات")
 k1, k2, k3, k4, k5 = st.columns(5)
+
 k1.metric("عدد المشاريع", total_projects)
 k2.metric("إجمالي قيمة المشاريع", fmt_big(total_value))
 k3.metric("متوسط الإنجاز", f"{avg_progress:.1f}%")
-k4.metric("عدد المشاريع المتعثرة", troubled)
+k4.metric("عدد المشاريع المتعثرة", actual_count)
 k5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%" if spend_ratio else "—")
+
+st.markdown("---")
+
+# -----------------------------
+# Toggle Icons (فتح/قفل)
+# -----------------------------
+if "open_panel" not in st.session_state:
+    st.session_state.open_panel = None
+
+def toggle(panel_name):
+    st.session_state.open_panel = None if st.session_state.open_panel == panel_name else panel_name
+
+b1, b2 = st.columns(2)
+
+with b1:
+    if st.button(f"🔴 المشاريع المتأخرة فعليًا ({actual_count})", use_container_width=True):
+        toggle("actual")
+
+with b2:
+    if st.button(f"🟠 المشاريع المتوقع تأخرها ({pred_count})", use_container_width=True):
+        toggle("pred")
+
+# -----------------------------
+# Panels
+# -----------------------------
+if st.session_state.open_panel == "actual":
+    st.subheader("المشاريع المتأخرة فعليًا")
+    if actual_df.empty:
+        st.success("لا توجد مشاريع متأخرة فعليًا حسب الفلاتر الحالية")
+    else:
+        show_cols = [c for c in [project_col, entity_col, municipality_col, status_col, progress_col, value_col] if c]
+        st.dataframe(actual_df[show_cols] if show_cols else actual_df, use_container_width=True, height=420)
+
+if st.session_state.open_panel == "pred":
+    st.subheader("المشاريع المتوقع تأخرها (تحليل ذكي)")
+    if pred_df.empty:
+        st.success("لا توجد مشاريع عالية/متوسطة المخاطر حسب الفلاتر الحالية")
+    else:
+        # أعمدة العرض الأساسية + سبب التوقع بالعربي
+        cols = [c for c in [project_col, entity_col, municipality_col, status_col] if c]
+        extra = ["risk_score", "مستوى الخطر", "سبب مختصر", "سبب تفصيلي"]
+        cols = cols + [c for c in extra if c in pred_df.columns]
+        st.dataframe(pred_df[cols], use_container_width=True, height=420)
 
 st.markdown("---")
 
