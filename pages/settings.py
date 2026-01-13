@@ -1,10 +1,11 @@
 import streamlit as st
-from core.config import load_config, save_config, apply_branding
+from core.config import ensure_defaults, load_config, save_config, apply_branding
 from core.auth import require_admin
 from core.sidebar import render_sidebar
 
 st.set_page_config(layout="wide")
 
+ensure_defaults()
 cfg = load_config()
 apply_branding(cfg)
 render_sidebar()
@@ -15,7 +16,7 @@ st.title("Settings")
 cfg["site_title"] = st.text_input("Site title", cfg["site_title"])
 cfg["dashboard_title"] = st.text_input("Dashboard title", cfg["dashboard_title"])
 
-if st.button("Save"):
+if st.button("Save settings"):
     save_config(cfg)
-    st.success("Saved")
+    st.success("Settings saved")
     st.rerun()
