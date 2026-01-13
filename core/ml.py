@@ -1,75 +1,43 @@
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 
 from core.features import build_features
 
-
-def train_delay_model(df_normalized: pd.DataFrame):
-    """
-    Trains a delay-risk model if enough labeled data exists.
-    Uses is_delayed_actual as label.
-    """
-    df = build_features(df_normalized)
-
-    y = df["is_delayed_actual"].astype(int)
-    if y.nunique() < 2 or len(df) < 30:
+def train_delay_model(df):
+    df = build_features(df)
+    if df["is_delayed_actual"].nunique() < 2 or len(df) < 30:
         return None, None
 
-    feature_cols = ["progress", "budget", "days_to_deadline", "municipality", "entity", "status"]
-    X = df[feature_cols].copy()
+    X = df[["progress", "budget", "days_to_deadline", "status"]]
+    y = df["is_delayed_actual"]
 
-    num_cols = ["progress", "budget", "days_to_deadline"]
-    cat_cols = ["municipality", "entity", "status"]
+    pre = ColumnTransformer([
+        ("num", SimpleImputer(strategy="median"), ["progress", "budget", "days_to_deadline"]),
+        ("cat", Pipeline([
+            ("imp", SimpleImputer(strategy="most_frequent")),
+            ("oh", OneHotEncoder(handle_unknown="ignore"))
+        ]), ["status"])
+    ])
 
-    pre = ColumnTransformer(
-        transformers=[
-            ("num", Pipeline([("imp", SimpleImputer(strategy="median"))]), num_cols),
-            ("cat", Pipeline([
-                ("imp", SimpleImputer(strategy="most_frequent")),
-                ("oh", OneHotEncoder(handle_unknown="ignore"))
-            ]), cat_cols),
-        ]
-    )
+    pipe = Pipeline([
+        ("pre", pre),
+        ("model", LogisticRegression(max_iter=300))
+    ])
 
-    model = LogisticRegression(max_iter=300)
-    pipe = Pipeline([("pre", pre), ("model", model)])
+    Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.25, stratify=y)
+    pipe.fit(Xtr, ytr)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42, stratify=y
-    )
-    pipe.fit(X_train, y_train)
-
-    auc = None
-    try:
-        proba = pipe.predict_proba(X_test)[:, 1]
-        auc = roc_auc_score(y_test, proba)
-    except Exception:
-        pass
-
+    auc = roc_auc_score(yte, pipe.predict_proba(Xte)[:, 1])
     return pipe, auc
 
-
-def predict_delay_risk(pipe, df_normalized: pd.DataFrame) -> pd.DataFrame:
-    """
-    Adds delay_risk + risk_bucket
-    """
-    df = build_features(df_normalized)
-    feature_cols = ["progress", "budget", "days_to_deadline", "municipality", "entity", "status"]
-    X = df[feature_cols].copy()
-
-    proba = pipe.predict_proba(X)[:, 1]
-
-    out = df_normalized.copy()
-    out["delay_risk"] = proba
-    out["risk_bucket"] = pd.cut(
-        proba,
-        bins=[-0.01, 0.33, 0.66, 1.01],
-        labels=["Low", "Medium", "High"]
-    )
-    return out
+def predict_delay(pipe, df):
+    df = build_features(df)
+    df["delay_risk"] = pipe.predict_proba(
+        df[["progress", "budget", "days_to_deadline", "status"]]
+    )[:, 1]
+    return df
