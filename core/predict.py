@@ -6,7 +6,7 @@ DELAY_WORDS = [
     "متعثر", "متوقف", "حرج"
 ]
 
-def _text_has_delay(row):
+def _row_has_delay_text(row):
     for v in row.values:
         if isinstance(v, str):
             t = v.lower()
@@ -29,7 +29,7 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     today = pd.Timestamp.today().normalize()
 
-    # ---------- تاريخ الانتهاء ----------
+    # -------- تاريخ الانتهاء --------
     end_col = _detect_end_date_column(out)
     if end_col:
         end_series = pd.to_datetime(out[end_col], errors="coerce")
@@ -37,64 +37,99 @@ def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["days_to_deadline"] = pd.NA
 
-    # ---------- متأخر فعليًا ----------
-    actual_delay = []
-
+    # -------- متأخر فعليًا --------
+    actual_list = []
     for _, row in out.iterrows():
-        delayed = False
+        actual = False
 
-        # 1) تجاوز الموعد
         dtd = row.get("days_to_deadline", pd.NA)
         if pd.notna(dtd) and dtd < 0:
-            delayed = True
+            actual = True
 
-        # 2) نص الحالة
-        if _text_has_delay(row):
-            delayed = True
+        if _row_has_delay_text(row):
+            actual = True
 
-        actual_delay.append(1 if delayed else 0)
+        actual_list.append(1 if actual else 0)
 
-    out["is_delayed_actual"] = actual_delay
+    out["is_delayed_actual"] = actual_list
 
-    # ---------- التنبؤ بالتأخير ----------
+    # -------- التنبؤ --------
     risks = []
     predicted = []
+    reasons_short = []
+    reasons_detail = []
+    actions = []
+    levels = []
+    colors = []
 
     for _, row in out.iterrows():
         score = 0.0
-
-        dtd = row.get("days_to_deadline", pd.NA)
-        prog = row.get("progress", pd.NA)
+        reasons = []
 
         # قرب الموعد
+        dtd = row.get("days_to_deadline", pd.NA)
         if pd.notna(dtd):
             if dtd <= 14:
-                score += 0.4
+                score += 0.35
+                reasons.append("قرب الموعد النهائي")
             elif dtd <= 30:
                 score += 0.25
+                reasons.append("الموعد النهائي خلال 30 يوم")
 
-        # إنجاز ضعيف
+        # نسبة الإنجاز
+        prog = row.get("progress", pd.NA)
         if pd.notna(prog):
             if prog < 30:
-                score += 0.4
+                score += 0.35
+                reasons.append("نسبة الإنجاز منخفضة جدًا")
             elif prog < 60:
-                score += 0.2
+                score += 0.20
+                reasons.append("نسبة الإنجاز أقل من المطلوب")
 
         # إشارات نصية
-        if _text_has_delay(row):
-            score += 0.3
+        if _row_has_delay_text(row):
+            score += 0.25
+            reasons.append("وجود مؤشرات تأخير في البيانات")
 
         score = min(score, 1.0)
-
         risks.append(score)
 
-        # متوقع فقط لو غير متأخر فعليًا
-        if score >= 0.6 and row["is_delayed_actual"] == 0:
+        # تصنيف المخاطر
+        if score >= 0.7:
+            level = "عالي"
+            color = "🔴"
+            action = "يتطلب تدخل عاجل من الإدارة العليا"
+        elif score >= 0.4:
+            level = "متوسط"
+            color = "🟠"
+            action = "يتطلب متابعة قريبة وتصحيح المسار"
+        else:
+            level = "منخفض"
+            color = "🟢"
+            action = "المخاطر تحت السيطرة"
+
+        levels.append(level)
+        colors.append(color)
+        actions.append(action)
+
+        if not reasons:
+            reasons = ["مؤشرات الخطر محدودة حاليًا"]
+
+        reasons_short.append(reasons[0])
+        reasons_detail.append(" • ".join(reasons))
+
+        # 🔹 متوقع تأخره = خطر متوسط أو عالي + غير متأخر فعليًا
+        if score >= 0.4 and row["is_delayed_actual"] == 0:
             predicted.append(1)
         else:
             predicted.append(0)
 
     out["delay_risk"] = risks
     out["is_delayed_predicted"] = predicted
+    out["risk_level"] = levels
+    out["risk_color"] = colors
+    out["reason_short"] = reasons_short
+    out["reason_detail"] = reasons_detail
+    out["action_recommendation"] = actions
 
     return out
