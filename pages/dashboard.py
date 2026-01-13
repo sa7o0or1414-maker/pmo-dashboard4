@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import importlib
 
 from core.data_io import prepare_dashboard_data
@@ -111,30 +110,54 @@ actual_delayed = int(fdf["is_delayed_actual"].sum()) if "is_delayed_actual" in f
 pred_delayed = int(fdf["is_delayed_predicted"].sum()) if "is_delayed_predicted" in fdf.columns else 0
 
 delay_ratio = (actual_delayed / total_projects) if total_projects else 0
+spend_ratio = (spent / total_value) if total_value else 0
 
+# ألوان ذكية
 if delay_ratio >= 0.25:
-    risk_class = "risk-high"
+    delay_class = "risk-high"
 elif delay_ratio >= 0.10:
-    risk_class = "risk-mid"
+    delay_class = "risk-mid"
 else:
-    risk_class = "risk-low"
+    delay_class = "risk-low"
+
+if spend_ratio < 0.40:
+    spend_class = "risk-high"
+elif spend_ratio < 0.70:
+    spend_class = "risk-mid"
+else:
+    spend_class = "risk-low"
 
 # ===================== KPI Cards =====================
-c1,c2,c3,c4 = st.columns(4)
+c1,c2,c3,c4,c5 = st.columns(5)
 
 with c1:
     st.markdown(f"<div class='kpi'><h4>عدد المشاريع</h4><h2>{total_projects}</h2></div>", unsafe_allow_html=True)
+
 with c2:
     st.markdown(f"<div class='kpi'><h4>إجمالي قيمة المشاريع</h4><h2>{total_value/1e9:.2f} bn</h2></div>", unsafe_allow_html=True)
+
 with c3:
     st.markdown(f"<div class='kpi'><h4>متوسط الإنجاز</h4><h2>{avg_progress:.1f}%</h2></div>", unsafe_allow_html=True)
+
 with c4:
     st.markdown(
         f"""
-        <div class="risk-card {risk_class}">
+        <div class="risk-card {delay_class}">
             <div class="risk-title">عدد المشاريع المتعثرة</div>
             <div class="risk-number">{actual_delayed}</div>
             <div class="risk-sub">من أصل {total_projects} مشروع</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with c5:
+    st.markdown(
+        f"""
+        <div class="risk-card {spend_class}">
+            <div class="risk-title">نسبة الصرف</div>
+            <div class="risk-number">{spend_ratio*100:.1f}%</div>
+            <div class="risk-sub">من إجمالي {total_value/1e9:.2f} bn</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -158,23 +181,17 @@ with b2:
 if st.session_state.view_mode == "actual":
     st.subheader("المشاريع المتأخرة فعليًا")
     df_a = fdf[fdf["is_delayed_actual"] == 1]
-    if df_a.empty:
-        st.info("لا توجد نتائج حسب الفلاتر الحالية")
-    else:
-        st.dataframe(df_a, use_container_width=True, height=420)
+    st.dataframe(df_a, use_container_width=True, height=420)
 
 elif st.session_state.view_mode == "pred":
     st.subheader("المشاريع المتوقع تأخرها")
     df_p = fdf[fdf["is_delayed_predicted"] == 1]
-    if df_p.empty:
-        st.info("لا توجد نتائج حسب الفلاتر الحالية")
-    else:
-        cols = [c for c in [
-            "project","entity","municipality",
-            "risk_color","risk_level","delay_risk",
-            "reason_short","reason_detail","action_recommendation"
-        ] if c in df_p.columns]
-        st.dataframe(df_p[cols] if cols else df_p, use_container_width=True, height=420)
+    cols = [c for c in [
+        "project","entity","municipality",
+        "risk_color","risk_level","delay_risk",
+        "reason_short","reason_detail","action_recommendation"
+    ] if c in df_p.columns]
+    st.dataframe(df_p[cols] if cols else df_p, use_container_width=True, height=420)
 
 st.markdown("---")
 
@@ -186,8 +203,6 @@ with left:
     if "status" in fdf.columns:
         fig1 = px.histogram(fdf, x="status")
         st.plotly_chart(fig1, use_container_width=True)
-    else:
-        st.info("لا يوجد عمود حالة")
 
 with right:
     st.subheader("أكثر البلديات / الجهات مشاريع")
@@ -201,10 +216,7 @@ with right:
             .reset_index()
         )
         top.columns = ["الاسم","العدد"]
-
         fig2 = px.bar(top, x="الاسم", y="العدد", text="العدد")
         fig2.update_layout(showlegend=False)
         fig2.update_xaxes(tickangle=-30)
         st.plotly_chart(fig2, use_container_width=True)
-    else:
-        st.info("لا يوجد عمود بلدية أو جهة")
