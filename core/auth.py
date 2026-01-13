@@ -5,11 +5,14 @@ def is_admin():
 
 def require_admin():
     if not is_admin():
-        st.warning("Admin access required")
+        st.warning("الدخول مخصص للمشرف فقط")
         st.stop()
 
-def login(user, password):
-    if user == st.secrets["ADMIN_USER"] and password == st.secrets["ADMIN_PASSWORD"]:
+def login(username, password):
+    if (
+        username == st.secrets["ADMIN_USER"]
+        and password == st.secrets["ADMIN_PASSWORD"]
+    ):
         st.session_state["is_admin"] = True
         return True
     return False
