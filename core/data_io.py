@@ -4,7 +4,6 @@ import pandas as pd
 
 DATA_PATH = "data/current.xlsx"
 
-# Aliases to detect columns in Arabic/English without strict naming
 ALIASES = {
     "municipality": ["municipality", "muni", "city", "بلدية", "البلدية", "municipal"],
     "entity": ["entity", "agency", "department", "جهة", "الجهة", "الإدارة", "ادارة"],
@@ -12,8 +11,8 @@ ALIASES = {
     "status": ["status", "state", "الحالة", "حالة", "حالة المشروع"],
     "progress": ["progress", "completion", "percent", "نسبة الانجاز", "نسبة الإنجاز", "الانجاز", "إنجاز", "%"],
     "budget": ["budget", "cost", "amount", "الميزانية", "التكلفة", "قيمة", "قيمة المشروع"],
-    "start_date": ["start date", "start", "تاريخ البدء", "تاريخ البداية", "بداية", "تاريخ بدء"],
-    "end_date": ["end date", "end", "due date", "تاريخ الانتهاء", "تاريخ النهاية", "نهاية", "موعد الانتهاء", "موعد التسليم"],
+    "start_date": ["start date", "start", "تاريخ البدء", "تاريخ البداية", "بداية"],
+    "end_date": ["end date", "end", "due date", "تاريخ الانتهاء", "تاريخ النهاية", "نهاية", "موعد التسليم"],
 }
 
 def ensure_data_file():
@@ -22,7 +21,7 @@ def ensure_data_file():
         pd.DataFrame().to_excel(DATA_PATH, index=False)
 
 def save_uploaded_file(file):
-    os.makedirs("data", exist_ok=True)
+    ensure_data_file()
     with open(DATA_PATH, "wb") as f:
         f.write(file.getbuffer())
 
@@ -33,70 +32,49 @@ def read_raw_data():
     except Exception:
         return pd.DataFrame()
 
-def _norm(s: str) -> str:
-    s = str(s).strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    return s
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s).strip().lower())
 
 def _find_best_match(columns, candidates):
-    # exact/contains matching (robust for Arabic/English)
-    norm_cols = {c: _norm(c) for c in columns}
-    cand_norm = [_norm(x) for x in candidates]
-
-    # 1) exact
-    for c, nc in norm_cols.items():
-        if nc in cand_norm:
-            return c
-
-    # 2) contains
-    for c, nc in norm_cols.items():
-        for cand in cand_norm:
-            if cand and (cand in nc or nc in cand):
+    for c in columns:
+        for cand in candidates:
+            if _norm(cand) in _norm(c) or _norm(c) in _norm(cand):
                 return c
-
     return None
 
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return pd.DataFrame()
-
-    out = pd.DataFrame()
-    for logical, candidates in ALIASES.items():
-        col = _find_best_match(df.columns, candidates)
-        if col is not None:
-            out[logical] = df[col]
-
+def normalize_columns(df):
+    out = df.copy()
+    for logical, aliases in ALIASES.items():
+        col = _find_best_match(out.columns, aliases)
+        if col:
+            out[logical] = out[col]
     return out
 
-def prepare_dashboard_data() -> pd.DataFrame:
+def prepare_dashboard_data():
     raw = read_raw_data()
-    if raw.empty:
-        return raw
+    if raw is None or raw.empty:
+        return pd.DataFrame()
 
-    df = normalize_columns(raw)
+    df = raw.copy()
+    df.columns = [str(c).strip() for c in df.columns]
 
-    # if critical columns missing, still return what we can
-    if df.empty:
-        return df
+    # ---- تحويل أي عمود رقمي تلقائيًا ----
+    for col in df.columns:
+        numeric_try = pd.to_numeric(df[col], errors="coerce")
+        if numeric_try.notna().mean() >= 0.5:
+            df[col] = numeric_try
 
-    # types
-    if "progress" in df.columns:
-        df["progress"] = pd.to_numeric(df["progress"], errors="coerce")
-        # if progress was 0-1, convert to 0-100
-        if df["progress"].dropna().between(0, 1).mean() > 0.8:
-            df["progress"] = df["progress"] * 100
-        df["progress"] = df["progress"].clip(0, 100)
+    # ---- تحويل أي عمود تاريخ ----
+    for col in df.columns:
+        if any(k in col.lower() for k in ["date", "تاريخ", "deadline", "due", "end", "start"]):
+            df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    if "budget" in df.columns:
-        df["budget"] = pd.to_numeric(df["budget"], errors="coerce")
+    # ---- تنظيف النصوص ----
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].astype(str).str.strip()
 
-    for d in ["start_date", "end_date"]:
-        if d in df.columns:
-            df[d] = pd.to_datetime(df[d], errors="coerce")
-
-    # clean strings
-    for c in ["municipality", "entity", "project", "status"]:
-        if c in df.columns:
-            df[c] = df[c].astype(str).fillna("").str.strip()
+    # ---- أعمدة منطقية إن وُجدت ----
+    df = normalize_columns(df)
 
     return df
