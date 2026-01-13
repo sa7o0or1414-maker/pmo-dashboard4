@@ -22,6 +22,7 @@ st.markdown(
     <style>
       html, body, [class*="css"] { direction: rtl; }
       .block-container { padding-top: 1.2rem; }
+
       .kpi{
         background: rgba(255,255,255,0.04);
         border: 1px solid rgba(255,255,255,0.08);
@@ -31,6 +32,20 @@ st.markdown(
       }
       .kpi h4{ margin:0; font-size:0.9rem; color:#cfd8dc; }
       .kpi h2{ margin:6px 0 0 0; font-size:1.6rem; color:white; }
+
+      .risk-card{
+        border-radius: 18px;
+        padding: 18px;
+        text-align: center;
+        color: white;
+      }
+      .risk-high{ background: linear-gradient(135deg,#7a0b0b,#b11212); }
+      .risk-mid{ background: linear-gradient(135deg,#8a5b00,#d18b00); }
+      .risk-low{ background: linear-gradient(135deg,#0b5c56,#0f8f87); }
+
+      .risk-title{ font-size: 0.95rem; opacity: 0.9; }
+      .risk-number{ font-size: 2.2rem; font-weight: 800; margin-top: 6px; }
+      .risk-sub{ font-size: 0.8rem; opacity: 0.85; margin-top: 4px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -95,6 +110,15 @@ if progress_col:
 actual_delayed = int(fdf["is_delayed_actual"].sum()) if "is_delayed_actual" in fdf.columns else 0
 pred_delayed = int(fdf["is_delayed_predicted"].sum()) if "is_delayed_predicted" in fdf.columns else 0
 
+delay_ratio = (actual_delayed / total_projects) if total_projects else 0
+
+if delay_ratio >= 0.25:
+    risk_class = "risk-high"
+elif delay_ratio >= 0.10:
+    risk_class = "risk-mid"
+else:
+    risk_class = "risk-low"
+
 # ===================== KPI Cards =====================
 c1,c2,c3,c4 = st.columns(4)
 
@@ -105,7 +129,16 @@ with c2:
 with c3:
     st.markdown(f"<div class='kpi'><h4>متوسط الإنجاز</h4><h2>{avg_progress:.1f}%</h2></div>", unsafe_allow_html=True)
 with c4:
-    st.markdown(f"<div class='kpi'><h4>التنبيهات</h4><h2>متأخر {actual_delayed} | متوقع {pred_delayed}</h2></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="risk-card {risk_class}">
+            <div class="risk-title">عدد المشاريع المتعثرة</div>
+            <div class="risk-number">{actual_delayed}</div>
+            <div class="risk-sub">من أصل {total_projects} مشروع</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 st.markdown("---")
 
@@ -175,28 +208,3 @@ with right:
         st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("لا يوجد عمود بلدية أو جهة")
-
-# ===================== Gauges =====================
-g1,g2 = st.columns(2)
-
-with g1:
-    pct_delay = (actual_delayed/total_projects*100) if total_projects else 0
-    fig_g1 = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=pct_delay,
-        title={"text":"مؤشر المشاريع المتعثرة"},
-        gauge={"axis":{"range":[0,100]}},
-        number={"suffix":"%"}
-    ))
-    st.plotly_chart(fig_g1, use_container_width=True)
-
-with g2:
-    pct_spent = (spent/total_value*100) if total_value else 0
-    fig_g2 = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=pct_spent,
-        title={"text":"نسبة الصرف"},
-        gauge={"axis":{"range":[0,100]}},
-        number={"suffix":"%"}
-    ))
-    st.plotly_chart(fig_g2, use_container_width=True)
