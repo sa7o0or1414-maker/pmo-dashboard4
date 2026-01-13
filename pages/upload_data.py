@@ -2,11 +2,13 @@ import streamlit as st
 from core.config import load_config, apply_branding
 from core.auth import require_admin
 from core.data_io import save_uploaded_file, read_data
+from core.sidebar import render_sidebar
 
 st.set_page_config(page_title="Upload Data", layout="wide")
 
 cfg = load_config()
 apply_branding(cfg)
+render_sidebar(active="upload")
 
 require_admin()
 
