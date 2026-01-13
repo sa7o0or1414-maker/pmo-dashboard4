@@ -1,130 +1,120 @@
+import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 
-DELAY_WORDS = [
-    "متأخر", "متاخر", "تأخر", "تاخر",
-    "delayed", "delay", "late", "overdue",
-    "متعثر", "متوقف", "حرج"
-]
+from core.data_io import prepare_dashboard_data
+from core.sidebar import render_sidebar
+from core.config import ensure_defaults, load_config, apply_branding
 
-def _row_has_delay_text(row):
-    for v in row.values:
-        if isinstance(v, str):
-            t = v.lower()
-            if any(w in t for w in DELAY_WORDS):
-                return True
-    return False
+st.set_page_config(layout="wide")
 
-def _detect_end_date_column(df):
-    for c in df.columns:
-        name = c.lower()
-        if any(k in name for k in ["end", "due", "deadline", "تاريخ", "موعد"]):
-            if pd.api.types.is_datetime64_any_dtype(df[c]):
-                return c
-    return None
+ensure_defaults()
+cfg = load_config()
+apply_branding(cfg)
+render_sidebar()
 
-def build_delay_outputs(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or df.empty:
-        return df
+st.title("لوحة معلومات المشاريع")
 
-    out = df.copy()
-    today = pd.Timestamp.today().normalize()
+# ===================== Load Data =====================
+df = prepare_dashboard_data()
+if df is None or df.empty:
+    st.info("يرجى رفع ملف Excel من صفحة (رفع البيانات)")
+    st.stop()
 
-    # ---------- تاريخ الانتهاء ----------
-    end_col = _detect_end_date_column(out)
-    if end_col:
-        end_series = pd.to_datetime(out[end_col], errors="coerce")
-        out["days_to_deadline"] = (end_series - today).dt.days
-    else:
-        out["days_to_deadline"] = pd.NA
+# 🔹 Lazy import (حل نهائي للـ Circular Import)
+from core import predict
+df = predict.build_delay_outputs(df)
 
-    # ---------- متأخر فعليًا ----------
-    actual_list = []
-    for _, row in out.iterrows():
-        actual = False
+# ===================== Filters =====================
+def opt(col):
+    if col not in df.columns:
+        return ["الكل"]
+    return ["الكل"] + sorted(df[col].dropna().unique().tolist())
 
-        dtd = row.get("days_to_deadline", pd.NA)
-        if pd.notna(dtd) and dtd < 0:
-            actual = True
+f1, f2, f3 = st.columns(3)
+with f1:
+    sel_entity = st.selectbox("الجهة", opt("entity"))
+with f2:
+    sel_muni = st.selectbox("البلدية", opt("municipality"))
+with f3:
+    sel_status = st.selectbox("حالة المشروع", opt("status"))
 
-        if _row_has_delay_text(row):
-            actual = True
+fdf = df.copy()
+if sel_entity != "الكل" and "entity" in fdf.columns:
+    fdf = fdf[fdf["entity"] == sel_entity]
+if sel_muni != "الكل" and "municipality" in fdf.columns:
+    fdf = fdf[fdf["municipality"] == sel_muni]
+if sel_status != "الكل" and "status" in fdf.columns:
+    fdf = fdf[fdf["status"] == sel_status]
 
-        actual_list.append(1 if actual else 0)
+# ===================== KPI CARDS =====================
+st.markdown("### ملخص عام")
+c1, c2, c3, c4 = st.columns(4)
 
-    out["is_delayed_actual"] = actual_list
+with c1:
+    st.metric("عدد المشاريع", len(fdf))
 
-    # ---------- التنبؤ ----------
-    risks = []
-    predicted = []
-    levels = []
-    colors = []
-    reasons_short = []
-    reasons_detail = []
-    actions = []
+with c2:
+    st.metric("المشاريع المتأخرة فعليًا", int(fdf["is_delayed_actual"].sum()))
 
-    for _, row in out.iterrows():
-        score = 0.0
-        reasons = []
+with c3:
+    num_cols = [c for c in fdf.columns if pd.api.types.is_numeric_dtype(fdf[c])]
+    st.metric("قيمة المشاريع", f"{fdf[num_cols[0]].sum():,.0f}" if num_cols else "—")
 
-        dtd = row.get("days_to_deadline", pd.NA)
-        if pd.notna(dtd):
-            if dtd <= 14:
-                score += 0.35
-                reasons.append("قرب الموعد النهائي")
-            elif dtd <= 30:
-                score += 0.25
-                reasons.append("الموعد النهائي خلال 30 يوم")
+with c4:
+    st.metric("المشاريع المتوقع تأخرها", int(fdf["is_delayed_predicted"].sum()))
 
-        prog = row.get("progress", pd.NA)
-        if pd.notna(prog):
-            if prog < 30:
-                score += 0.35
-                reasons.append("نسبة الإنجاز منخفضة جدًا")
-            elif prog < 60:
-                score += 0.20
-                reasons.append("نسبة الإنجاز أقل من المطلوب")
+st.markdown("---")
 
-        if _row_has_delay_text(row):
-            score += 0.25
-            reasons.append("وجود مؤشرات تأخير في البيانات")
+# ===================== Tables =====================
+b1, b2 = st.columns(2)
 
-        score = min(score, 1.0)
-        risks.append(score)
+with b1:
+    st.subheader("المشاريع المتأخرة فعليًا")
+    st.dataframe(
+        fdf[fdf["is_delayed_actual"] == 1],
+        use_container_width=True,
+        height=400
+    )
 
-        if score >= 0.7:
-            level = "عالي"
-            color = "🔴"
-            action = "يتطلب تدخل عاجل من الإدارة العليا"
-        elif score >= 0.4:
-            level = "متوسط"
-            color = "🟠"
-            action = "يتطلب متابعة قريبة وتصحيح المسار"
-        else:
-            level = "منخفض"
-            color = "🟢"
-            action = "المخاطر تحت السيطرة"
+with b2:
+    st.subheader("المشاريع المتوقع تأخرها")
+    st.dataframe(
+        fdf[fdf["is_delayed_predicted"] == 1][[
+            c for c in [
+                "project",
+                "entity",
+                "municipality",
+                "risk_color",
+                "risk_level",
+                "delay_risk",
+                "reason_short",
+                "action_recommendation"
+            ] if c in fdf.columns
+        ]],
+        use_container_width=True,
+        height=400
+    )
 
-        levels.append(level)
-        colors.append(color)
-        actions.append(action)
+# ===================== Charts =====================
+st.markdown("---")
 
-        if not reasons:
-            reasons = ["مؤشرات الخطر محدودة حاليًا"]
+if "status" in fdf.columns:
+    fig = px.histogram(
+        fdf,
+        x="status",
+        color="status",
+        title="عدد المشاريع حسب حالة المشروع"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-        reasons_short.append(reasons[0])
-        reasons_detail.append(" • ".join(reasons))
-
-        if score >= 0.4 and row["is_delayed_actual"] == 0:
-            predicted.append(1)
-        else:
-            predicted.append(0)
-
-    out["delay_risk"] = risks
-    out["is_delayed_predicted"] = predicted
-    out["risk_level"] = levels
-    out["risk_color"] = colors
-    out["reason_short"] = reasons_short
-    out["reason_detail"] = reasons_detail
-    out["action_recommendation"] = actions
-
-    return out
+# Gauge
+delayed_pct = (fdf["is_delayed_actual"].mean() * 100) if len(fdf) else 0
+fig = go.Figure(go.Indicator(
+    mode="gauge+number",
+    value=delayed_pct,
+    title={"text": "مؤشر المشاريع المتعثرة"},
+    gauge={"axis": {"range": [0, 100]}}
+))
+st.plotly_chart(fig, use_container_width=True)
