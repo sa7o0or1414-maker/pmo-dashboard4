@@ -58,9 +58,6 @@ if df is None or df.empty:
     st.info("يرجى رفع ملف Excel من صفحة (رفع البيانات)")
     st.stop()
 
-predict = importlib.import_module("core.predict")
-df = predict.build_delay_outputs(df)
-
 # ===================== Sidebar Filters =====================
 st.sidebar.markdown("## تحديد النتائج")
 
@@ -80,6 +77,31 @@ if sel_muni != "الكل" and "municipality" in fdf.columns:
     fdf = fdf[fdf["municipality"] == sel_muni]
 if sel_entity != "الكل" and "entity" in fdf.columns:
     fdf = fdf[fdf["entity"] == sel_entity]
+
+# ===================== Helper: detect delayed column =====================
+def detect_delay_column(df):
+    keywords = ["متأخر", "تأخير", "delayed", "delay"]
+    for c in df.columns:
+        name = str(c).lower()
+        if any(k in name for k in keywords):
+            return c
+    return None
+
+def count_delayed(series):
+    # نصوص
+    text_vals = ["نعم", "yes", "متأخر", "delayed", "true"]
+    try:
+        if series.dtype == object:
+            return series.astype(str).str.lower().isin(
+                [v.lower() for v in text_vals]
+            ).sum()
+        # أرقام
+        return (pd.to_numeric(series, errors="coerce") > 0).sum()
+    except Exception:
+        return 0
+
+delay_col = detect_delay_column(fdf)
+actual_delayed = count_delayed(fdf[delay_col]) if delay_col else 0
 
 # ===================== KPI Calculations =====================
 def pick_col(keywords):
@@ -104,9 +126,6 @@ if progress_col:
     if p.dropna().between(0,1).mean() > 0.7:
         p = p * 100
     avg_progress = p.mean()
-
-actual_delayed = int(fdf["is_delayed_actual"].sum()) if "is_delayed_actual" in fdf.columns else 0
-pred_delayed = int(fdf["is_delayed_predicted"].sum()) if "is_delayed_predicted" in fdf.columns else 0
 
 delay_ratio = (actual_delayed / total_projects) if total_projects else 0
 spend_ratio = (spent / total_value) if total_value else 0
@@ -171,18 +190,18 @@ with b2:
 # ===================== Results =====================
 if st.session_state.view_mode == "actual":
     st.subheader("المشاريع المتأخرة فعليًا")
-    df_a = fdf[fdf["is_delayed_actual"] == 1]
-    st.dataframe(df_a, use_container_width=True, height=420)
+    if delay_col:
+        st.dataframe(
+            fdf[fdf[delay_col].notna()],
+            use_container_width=True,
+            height=420
+        )
+    else:
+        st.info("لا يوجد عمود يدل على التأخير في الملف")
 
 elif st.session_state.view_mode == "pred":
     st.subheader("المشاريع المتوقع تأخرها")
-    df_p = fdf[fdf["is_delayed_predicted"] == 1]
-    cols = [c for c in [
-        "project","entity","municipality",
-        "risk_color","risk_level","delay_risk",
-        "reason_short","reason_detail","action_recommendation"
-    ] if c in df_p.columns]
-    st.dataframe(df_p[cols] if cols else df_p, use_container_width=True, height=420)
+    st.info("يعتمد هذا القسم على التحليل الذكي والتنبؤ (يُستكمل لاحقًا)")
 
 st.markdown("---")
 
