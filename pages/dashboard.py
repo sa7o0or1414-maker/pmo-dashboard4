@@ -88,6 +88,39 @@ def show_table(title, tdf, extra_cols=None):
         st.info("لا توجد نتائج حسب الفلاتر الحالية.")
         return
 
+    base_candidates = ["municipality", "entity", "project", "status", "progress", "end_date"]
+    show_cols = [c for c in base_candidates if c in tdf.columns]
+
+    if extra_cols:
+        for c in extra_cols:
+            if c in tdf.columns and c not in show_cols:
+                show_cols.append(c)
+
+    if not show_cols:
+        show_cols = list(tdf.columns)
+
+    # pick safe sort column
+    sort_candidates = ["delay_risk", "days_to_deadline", "progress", "end_date", "project"]
+    sort_col = next((c for c in sort_candidates if c in tdf.columns), None)
+    if sort_col is None:
+        sort_col = show_cols[0]
+
+    # ensure sort_col is included in displayed columns
+    if sort_col not in show_cols and sort_col in tdf.columns:
+        show_cols = [sort_col] + show_cols
+
+    st.subheader(title)
+
+    # sort first on the full df (guaranteed column exists), then select columns
+    sorted_df = tdf.sort_values(by=sort_col, ascending=False, kind="mergesort")
+
+    st.dataframe(
+        sorted_df[show_cols],
+        use_container_width=True
+    )
+
+        return
+
     # base columns only if they exist
     base_candidates = ["municipality", "entity", "project", "status", "progress", "end_date"]
     show_cols = [c for c in base_candidates if c in tdf.columns]
