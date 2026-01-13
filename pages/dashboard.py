@@ -13,6 +13,8 @@ st.set_page_config(page_title="Dashboard", layout="wide")
 
 cfg = load_config()
 apply_branding(cfg)
+render_sidebar(active="dashboard")
+
 
 st.title(cfg.get("dashboard_title", "Dashboard"))
 
