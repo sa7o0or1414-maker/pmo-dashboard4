@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 
 # =====================================================
-# Page Config (يجب أن يكون أول أمر Streamlit)
+# Page Config (أول أمر Streamlit)
 # =====================================================
 st.set_page_config(
     page_title="لوحة المعلومات",
@@ -17,7 +17,7 @@ hide_streamlit_default_nav()
 render_sidebar()
 
 # =====================================================
-# Load & Prepare Data
+# Load Data
 # =====================================================
 from core.data_io import prepare_dashboard_data
 
@@ -89,11 +89,9 @@ if sel_status != "الكل" and "status" in fdf.columns:
 total_projects = len(fdf)
 
 value_col = pick_col(fdf, ["value", "amount", "budget", "cost", "قيمة", "ميزانية"])
-spent_col = pick_col(fdf, ["spent", "paid", "صرف", "مدفوع"])
 progress_col = pick_col(fdf, ["progress", "انجاز", "إنجاز", "%"])
 
 total_value = fdf[value_col].sum() if value_col else 0
-spent_value = fdf[spent_col].sum() if spent_col else 0
 
 avg_progress = 0
 if progress_col:
@@ -105,7 +103,23 @@ if progress_col:
 delay_col = detect_delay_col(fdf)
 actual_delayed = count_delayed(fdf[delay_col]) if delay_col else 0
 
-spend_ratio = (spent_value / total_value) if total_value else 0
+# =====================================================
+# ✅ نسبة الصرف (من عمود جاهز إن وُجد)
+# =====================================================
+spend_ratio = 0
+
+spend_ratio_col = pick_col(
+    fdf,
+    ["نسبة الصرف", "spend ratio", "spending", "صرف"],
+    numeric_only=True
+)
+
+if spend_ratio_col:
+    sr = pd.to_numeric(fdf[spend_ratio_col], errors="coerce")
+    # يدعم 0–1 أو 0–100
+    if sr.dropna().between(0, 1).mean() > 0.6:
+        sr = sr * 100
+    spend_ratio = sr.mean() / 100
 
 # =====================================================
 # KPI Cards
@@ -115,15 +129,18 @@ st.markdown("## نظرة عامة")
 c1, c2, c3, c4, c5 = st.columns(5)
 
 c1.metric("عدد المشاريع", total_projects)
-c2.metric("إجمالي قيمة المشاريع", f"{total_value/1e9:.2f} مليار" if total_value else "—")
+c2.metric(
+    "إجمالي قيمة المشاريع",
+    f"{total_value/1e9:.2f} مليار" if total_value else "—"
+)
 c3.metric("متوسط الإنجاز", f"{avg_progress:.1f}%")
 c4.metric("عدد المشاريع المتعثرة", actual_delayed)
-c5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%" if total_value else "—")
+c5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%")
 
 st.markdown("---")
 
 # =====================================================
-# Smart Prediction (تحليل ذكي ثابت)
+# Smart Prediction
 # =====================================================
 pred_df = fdf.copy()
 risk_score = pd.Series(0, index=pred_df.index)
@@ -131,12 +148,6 @@ risk_score = pd.Series(0, index=pred_df.index)
 if progress_col:
     prog = pd.to_numeric(pred_df[progress_col], errors="coerce").fillna(0)
     risk_score += (100 - prog) * 0.4
-
-if spent_col and value_col:
-    sv = pd.to_numeric(pred_df[spent_col], errors="coerce").fillna(0)
-    vv = pd.to_numeric(pred_df[value_col], errors="coerce").replace(0, pd.NA)
-    ratio = (sv / vv).fillna(0)
-    risk_score += (1 - ratio) * 30
 
 bad_words = ["تأخير", "متأخر", "تعثر", "delay", "risk", "problem"]
 for c in pred_df.columns:
@@ -158,8 +169,7 @@ pred_df[["مستوى الخطر", "رمز", "توصية"]] = pred_df["risk_score
     lambda x: pd.Series(classify(x))
 )
 
-pred_df["سبب التوقع"] = "تحليل آلي للأداء والصرف والملاحظات النصية"
-
+pred_df["سبب التوقع"] = "تحليل آلي للأداء والملاحظات النصية"
 predicted_df = pred_df[pred_df["risk_score"] >= 40]
 
 # =====================================================
