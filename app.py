@@ -1,8 +1,13 @@
 import streamlit as st
+from core.config import ensure_defaults, load_config, apply_branding
+from core.sidebar import render_sidebar
 
 st.set_page_config(layout="wide")
 
-st.title("PMO Dashboard")
-st.success("The app is running correctly.")
+ensure_defaults()
+cfg = load_config()
+apply_branding(cfg)
+render_sidebar()
 
-st.write("If you can see this message, Streamlit is working.")
+st.title("PMO Dashboard")
+st.info("Use the sidebar to navigate.")
