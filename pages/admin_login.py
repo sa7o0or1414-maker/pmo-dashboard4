@@ -1,11 +1,13 @@
 import streamlit as st
 from core.config import load_config, apply_branding
 from core.auth import login, logout, is_admin
+from core.sidebar import render_sidebar
 
 st.set_page_config(page_title="Admin Login", layout="wide")
 
 cfg = load_config()
 apply_branding(cfg)
+render_sidebar(active="login")
 
 st.title("Admin Login")
 
