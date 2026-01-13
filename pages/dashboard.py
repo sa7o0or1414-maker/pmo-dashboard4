@@ -2,166 +2,172 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# ==============================
-# لا تكرر set_page_config هنا ❌
-# ==============================
+st.set_page_config(page_title="لوحة التحكم", layout="wide")
 
-# ---------- Helpers ----------
-def safe_for_display(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.copy()
-    for c in d.columns:
-        if np.issubdtype(d[c].dtype, np.datetime64):
-            d[c] = d[c].astype(str)
-        elif isinstance(d[c].iloc[0], (list, dict)):
-            d[c] = d[c].astype(str)
-    return d
+# إخفاء السايدبار الافتراضي
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"] > div:first-child {
+        display: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-
-def show_readonly_table(title: str, df: pd.DataFrame):
-    st.subheader(title)
-
-    if df.empty:
-        st.info("لا توجد بيانات للعرض")
-        return
-
-    d = safe_for_display(df).copy()
-
-    # حل مشكلة الأعمدة المكررة
-    seen = {}
-    new_cols = []
-    for c in d.columns:
-        if c in seen:
-            seen[c] += 1
-            new_cols.append(f"{c} ({seen[c]})")
-        else:
-            seen[c] = 1
-            new_cols.append(c)
-    d.columns = new_cols
-
-    st.data_editor(
-        d,
-        use_container_width=True,
-        height=420,
-        disabled=True,
-        hide_index=True
-    )
-
-
-# ---------- Load Data ----------
-st.title("📊 لوحة المعلومات")
-
-if "data_df" not in st.session_state or st.session_state["data_df"] is None:
-    st.warning("⚠️ الرجاء رفع ملف البيانات أولًا من صفحة (رفع البيانات)")
+# التحقق من وجود بيانات
+if "data" not in st.session_state:
+    st.warning("⚠️ الرجاء رفع ملف البيانات أولاً")
     st.stop()
 
-df = st.session_state["data_df"].copy()
+df = st.session_state["data"].copy()
 
-# ---------- Normalize Columns ----------
-cols_lower = {c.lower(): c for c in df.columns}
+# ----------------------------
+# دوال مساعدة
+# ----------------------------
+def safe_df(d):
+    for c in d.columns:
+        d[c] = d[c].astype(str)
+    return d
 
-def col(*names):
-    for n in names:
-        if n.lower() in cols_lower:
-            return cols_lower[n.lower()]
+def col_like(names):
+    for c in df.columns:
+        for n in names:
+            if n in c.lower():
+                return c
     return None
 
-status_col = col("حالة المشروع", "status")
-municipality_col = col("البلدية", "municipality")
-entity_col = col("الجهة", "entity")
-value_col = col("قيمة المشروع", "value", "amount", "budget", "cost")
-spend_col = col("نسبة الصرف", "spend", "spending")
+# الأعمدة الأساسية (مرنة عربي/إنجليزي)
+status_col = col_like(["حالة", "status"])
+entity_col = col_like(["جهة", "entity"])
+municipality_col = col_like(["بلدية", "municipality"])
+project_col = col_like(["مشروع", "project"])
+value_col = col_like(["قيمة", "amount", "cost", "budget"])
+spend_col = col_like(["صرف", "spend"])
 
-# ---------- KPIs ----------
-total_projects = len(df)
-total_value = df[value_col].sum() if value_col else 0
-avg_spend = df[spend_col].mean() if spend_col else 0
+# ----------------------------
+# الفلاتر
+# ----------------------------
+st.subheader("🔎 الفلاتر")
 
-actual_delayed = df[df[status_col].astype(str).str.contains("متأخر", na=False)] if status_col else pd.DataFrame()
-actual_delayed_count = len(actual_delayed)
+c1, c2, c3 = st.columns(3)
 
-# ---------- Cards ----------
-c1, c2, c3, c4, c5 = st.columns(5)
+with c1:
+    status_filter = st.selectbox(
+        "حالة المشروع",
+        ["الكل"] + sorted(df[status_col].dropna().unique().tolist())
+        if status_col else ["الكل"]
+    )
 
-c1.metric("عدد المشاريع", total_projects)
-c2.metric("إجمالي قيمة المشاريع", f"{total_value:,.0f}")
-c3.metric("متوسط نسبة الصرف", f"{avg_spend:.1f}%" if spend_col else "—")
-c4.metric(
-    "عدد المشاريع المتعثرة",
-    actual_delayed_count,
-    help="يتم الحساب من حالة المشروع"
+with c2:
+    municipality_filter = st.selectbox(
+        "البلدية",
+        ["الكل"] + sorted(df[municipality_col].dropna().unique().tolist())
+        if municipality_col else ["الكل"]
+    )
+
+with c3:
+    entity_filter = st.selectbox(
+        "الجهة",
+        ["الكل"] + sorted(df[entity_col].dropna().unique().tolist())
+        if entity_col else ["الكل"]
+    )
+
+fdf = df.copy()
+if status_col and status_filter != "الكل":
+    fdf = fdf[fdf[status_col] == status_filter]
+if municipality_col and municipality_filter != "الكل":
+    fdf = fdf[fdf[municipality_col] == municipality_filter]
+if entity_col and entity_filter != "الكل":
+    fdf = fdf[fdf[entity_col] == entity_filter]
+
+# ----------------------------
+# الكروت العلوية
+# ----------------------------
+total_projects = len(fdf)
+
+total_value = (
+    pd.to_numeric(fdf[value_col], errors="coerce").sum()
+    if value_col else 0
 )
-c5.metric(
-    "نسبة الصرف",
-    f"{avg_spend:.1f}%" if spend_col else "—"
+
+avg_spend = (
+    pd.to_numeric(fdf[spend_col], errors="coerce").mean()
+    if spend_col else 0
 )
+
+delayed_actual = (
+    fdf[fdf[status_col].astype(str).str.contains("متأخر", na=False)]
+    if status_col else pd.DataFrame()
+)
+
+delayed_pred = (
+    fdf[fdf[status_col].astype(str).str.contains("متوقع", na=False)]
+    if status_col else pd.DataFrame()
+)
+
+k1, k2, k3, k4, k5 = st.columns(5)
+
+k1.metric("عدد المشاريع", total_projects)
+k2.metric("إجمالي قيمة المشاريع", f"{total_value:,.0f}")
+k3.metric("متوسط نسبة الصرف", f"{avg_spend:.1f}%")
+k4.metric("عدد المشاريع المتأخرة", len(delayed_actual))
+k5.metric("عدد المشاريع المتوقع تأخرها", len(delayed_pred))
 
 st.divider()
 
-# ---------- Toggles ----------
+# ----------------------------
+# أيقونات تفاعلية (فتح / إغلاق)
+# ----------------------------
 if "show_actual" not in st.session_state:
     st.session_state.show_actual = False
 if "show_pred" not in st.session_state:
     st.session_state.show_pred = False
 
-b1, b2 = st.columns(2)
+c1, c2 = st.columns(2)
 
-with b1:
-    if st.button(f"🔴 المشاريع المتأخرة فعليًا ({actual_delayed_count})", use_container_width=True):
+with c1:
+    if st.button(f"🔴 المشاريع المتأخرة فعليًا ({len(delayed_actual)})"):
         st.session_state.show_actual = not st.session_state.show_actual
 
-with b2:
-    # تنبؤ بسيط ذكي (بدون كسر)
-    pred_df = df.copy()
-    pred_df["مستوى الخطر"] = np.where(
-        pred_df.get(spend_col, 0) < 30, "🔴 عالي",
-        np.where(pred_df.get(spend_col, 0) < 60, "🟠 متوسط", "🟢 منخفض")
-    )
-    pred_df["سبب التوقع المختصر"] = np.where(
-        pred_df.get(spend_col, 0) < 30,
-        "انخفاض نسبة الصرف",
-        "مؤشرات مستقرة"
-    )
-    pred_df["سبب التوقع التفصيلي"] = np.where(
-        pred_df.get(spend_col, 0) < 30,
-        "نسبة الصرف أقل من الحد الآمن مقارنة بزمن المشروع",
-        "لا توجد إشارات تأخير حالية"
-    )
-
-    predicted_delayed = pred_df[pred_df["مستوى الخطر"].isin(["🔴 عالي", "🟠 متوسط"])]
-
-    if st.button(f"🟠 المشاريع المتوقع تأخرها ({len(predicted_delayed)})", use_container_width=True):
+with c2:
+    if st.button(f"🟠 المشاريع المتوقع تأخرها ({len(delayed_pred)})"):
         st.session_state.show_pred = not st.session_state.show_pred
 
-# ---------- Tables ----------
-if st.session_state.show_actual:
-    show_readonly_table("🔴 المشاريع المتأخرة فعليًا", actual_delayed)
+# ----------------------------
+# الجداول
+# ----------------------------
+if st.session_state.show_actual and not delayed_actual.empty:
+    st.subheader("🔴 المشاريع المتأخرة فعليًا")
+    st.dataframe(
+        safe_df(delayed_actual),
+        use_container_width=True,
+        height=400
+    )
 
-if st.session_state.show_pred:
-    show_readonly_table(
-        "🟠 المشاريع المتوقع تأخرها (تحليل ذكي)",
-        predicted_delayed
+if st.session_state.show_pred and not delayed_pred.empty:
+    st.subheader("🟠 المشاريع المتوقع تأخرها (تحليل ذكي)")
+    delayed_pred = delayed_pred.copy()
+    delayed_pred["سبب التوقع"] = "انخفاض نسبة الصرف / مدة طويلة / تعقيد المشروع"
+    st.dataframe(
+        safe_df(delayed_pred),
+        use_container_width=True,
+        height=400
     )
 
 st.divider()
 
-# ---------- Charts ----------
-col1, col2 = st.columns(2)
+# ----------------------------
+# الرسوم
+# ----------------------------
+if status_col:
+    st.subheader("📊 توزيع المشاريع حسب الحالة")
+    status_counts = fdf[status_col].value_counts().reset_index()
+    status_counts.columns = ["الحالة", "عدد المشاريع"]
+    st.bar_chart(status_counts.set_index("الحالة"))
 
-with col1:
-    st.subheader("توزيع المشاريع حسب الحالة")
-    if status_col:
-        status_counts = df[status_col].value_counts().reset_index()
-        status_counts.columns = ["الحالة", "عدد المشاريع"]
-        st.bar_chart(status_counts, x="الحالة", y="عدد المشاريع", use_container_width=True)
-    else:
-        st.info("لا يوجد عمود حالة المشروع")
-
-with col2:
-    st.subheader("أكثر الجهات / البلديات مشاريع")
-    group_col = municipality_col or entity_col
-    if group_col:
-        top_entities = df[group_col].value_counts().head(15).reset_index()
-        top_entities.columns = ["الجهة / البلدية", "عدد المشاريع"]
-        st.bar_chart(top_entities, x="الجهة / البلدية", y="عدد المشاريع", use_container_width=True)
-    else:
-        st.info("لا يوجد عمود جهة أو بلدية")
+if municipality_col:
+    st.subheader("🏙️ أكثر الجهات / البلديات مشاريع")
+    muni_counts = fdf[municipality_col].value_counts().head(15)
+    st.bar_chart(muni_counts)
