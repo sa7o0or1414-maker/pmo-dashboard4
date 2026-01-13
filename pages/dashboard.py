@@ -3,12 +3,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-st.markdown("""
-<style>
-[data-testid="stSidebarNav"] { display: none; }
-</style>
-""", unsafe_allow_html=True)
-
 # =========================
 # تحميل البيانات من Session
 # =========================
