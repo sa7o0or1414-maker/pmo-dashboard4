@@ -171,3 +171,4 @@ if municipality_col:
     st.subheader("🏙️ أكثر الجهات / البلديات مشاريع")
     muni_counts = fdf[municipality_col].value_counts().head(15)
     st.bar_chart(muni_counts)
+    
