@@ -4,12 +4,14 @@ def hide_streamlit_default_nav():
     st.markdown(
         """
         <style>
-          /* Hide Streamlit default multipage navigation */
-          [data-testid="stSidebarNav"] { display: none !important; }
+        /* Hide Streamlit multipage default navigation */
+        [data-testid="stSidebarNav"] {
+            display: none !important;
+        }
 
-          /* Optional: hide default header/footer */
-          #MainMenu {visibility: hidden;}
-          footer {visibility: hidden;}
+        /* Hide Streamlit menu & footer */
+        #MainMenu { visibility: hidden; }
+        footer { visibility: hidden; }
         </style>
         """,
         unsafe_allow_html=True,
