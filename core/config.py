@@ -7,7 +7,6 @@ CONFIG_PATH = "data/config.json"
 DEFAULT_CONFIG = {
     "site_title": "PMO Dashboard",
     "dashboard_title": "Project Portfolio Overview",
-    "logo_path": "assets/logo.png",
     "brand": {
         "primary_color": "#7dd3fc",
         "background_color": "#0b1220",
@@ -17,25 +16,21 @@ DEFAULT_CONFIG = {
     },
     "layout": {
         "rtl": True,
-        "sidebar_width": 320,
-        "kpi_font_size": 28
+        "sidebar_width": 300,
+        "kpi_font_size": 26
     }
 }
 
 def ensure_defaults():
     os.makedirs("data", exist_ok=True)
-    os.makedirs("assets", exist_ok=True)
     if not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
 
 def load_config():
+    ensure_defaults()
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
-
-def save_config(cfg):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 def apply_branding(cfg):
     brand = cfg["brand"]
@@ -70,8 +65,4 @@ def apply_branding(cfg):
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
-
-    if os.path.exists(cfg["logo_path"]):
-        st.sidebar.image(cfg["logo_path"], use_column_width=True)
-
     st.sidebar.markdown(f"### {cfg['site_title']}")
