@@ -84,20 +84,19 @@ if sel_entity != "الكل" and "entity" in fdf.columns:
 # ===================== KPI Calculations =====================
 def pick_col(keywords):
     for c in fdf.columns:
-        name = c.lower()
-        if any(k in name for k in keywords) and pd.api.types.is_numeric_dtype(fdf[c]):
-            return c
+        if pd.api.types.is_numeric_dtype(fdf[c]):
+            name = c.lower()
+            if any(k in name for k in keywords):
+                return c
     return None
 
 value_col = pick_col(["value","amount","budget","cost","قيمة","ميزانية","تكلفة"])
 spent_col = pick_col(["spent","paid","صرف","مدفوع","مستخلص"])
-remain_col = pick_col(["remaining","متبقي","باقي"])
 progress_col = pick_col(["progress","انجاز","إنجاز","percent","%"])
 
 total_projects = len(fdf)
 total_value = fdf[value_col].sum() if value_col else 0
 spent = fdf[spent_col].sum() if spent_col else 0
-remaining = fdf[remain_col].sum() if remain_col else max(total_value - spent, 0)
 
 avg_progress = 0
 if progress_col:
@@ -112,20 +111,8 @@ pred_delayed = int(fdf["is_delayed_predicted"].sum()) if "is_delayed_predicted" 
 delay_ratio = (actual_delayed / total_projects) if total_projects else 0
 spend_ratio = (spent / total_value) if total_value else 0
 
-# ألوان ذكية
-if delay_ratio >= 0.25:
-    delay_class = "risk-high"
-elif delay_ratio >= 0.10:
-    delay_class = "risk-mid"
-else:
-    delay_class = "risk-low"
-
-if spend_ratio < 0.40:
-    spend_class = "risk-high"
-elif spend_ratio < 0.70:
-    spend_class = "risk-mid"
-else:
-    spend_class = "risk-low"
+delay_class = "risk-high" if delay_ratio >= 0.25 else "risk-mid" if delay_ratio >= 0.10 else "risk-low"
+spend_class = "risk-high" if spend_ratio < 0.40 else "risk-mid" if spend_ratio < 0.70 else "risk-low"
 
 # ===================== KPI Cards =====================
 c1,c2,c3,c4,c5 = st.columns(5)
@@ -165,17 +152,21 @@ with c5:
 
 st.markdown("---")
 
-# ===================== Action Buttons =====================
+# ===================== Toggle Buttons =====================
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = None
 
-b1,b2 = st.columns(2)
+def toggle(mode):
+    st.session_state.view_mode = None if st.session_state.view_mode == mode else mode
+
+b1, b2 = st.columns(2)
 with b1:
-    if st.button("المشاريع المتأخرة فعليًا", use_container_width=True):
-        st.session_state.view_mode = "actual"
+    if st.button("📌 المشاريع المتأخرة فعليًا", use_container_width=True):
+        toggle("actual")
+
 with b2:
-    if st.button("المشاريع المتوقع تأخرها", use_container_width=True):
-        st.session_state.view_mode = "pred"
+    if st.button("🧠 المشاريع المتوقع تأخرها", use_container_width=True):
+        toggle("pred")
 
 # ===================== Results =====================
 if st.session_state.view_mode == "actual":
