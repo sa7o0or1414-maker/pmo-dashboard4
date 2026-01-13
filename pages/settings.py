@@ -1,15 +1,16 @@
 import streamlit as st
 
-st.set_page_config(page_title="الإعدادات", layout="wide")
+st.set_page_config(
+    page_title="الإعدادات",
+    layout="wide"
+)
 
 from core.ui import hide_streamlit_default_nav
 hide_streamlit_default_nav()
 
 from core.sidebar import render_sidebar
-from core.config import load_config, save_config
-from core.auth import hash_password
-
 render_sidebar()
+
 
 if not st.session_state.get("is_admin"):
     st.error("هذه الصفحة للأدمن فقط")
