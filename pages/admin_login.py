@@ -1,15 +1,16 @@
 import streamlit as st
 
-st.set_page_config(page_title="دخول الأدمن", layout="wide")
+st.set_page_config(
+    page_title="تسجيل دخول الأدمن",
+    layout="wide"
+)
 
 from core.ui import hide_streamlit_default_nav
 hide_streamlit_default_nav()
 
 from core.sidebar import render_sidebar
-from core.config import load_config
-from core.auth import verify_password
-
 render_sidebar()
+
 cfg = load_config()
 
 if "is_admin" not in st.session_state:
