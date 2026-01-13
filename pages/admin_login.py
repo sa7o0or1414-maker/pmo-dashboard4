@@ -3,30 +3,25 @@ from core.config import load_config, apply_branding
 from core.auth import login, logout, is_admin
 from core.sidebar import render_sidebar
 
-st.set_page_config(page_title="Admin Login", layout="wide")
+st.set_page_config(layout="wide")
 
 cfg = load_config()
 apply_branding(cfg)
-render_sidebar(active="login")
+render_sidebar()
 
 st.title("Admin Login")
 
 if is_admin():
-    st.success("You are logged in as admin.")
-    if st.button("Log out"):
+    st.success("Logged in")
+    if st.button("Logout"):
         logout()
         st.rerun()
-    st.stop()
-
-with st.form("login_form"):
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    submitted = st.form_submit_button("Login")
-
-if submitted:
-    ok = login(username, password)
-    if ok:
-        st.success("Login successful.")
-        st.rerun()
-    else:
-        st.error("Invalid username or password.")
+else:
+    user = st.text_input("Username")
+    pwd = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if login(user, pwd):
+            st.success("Success")
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
