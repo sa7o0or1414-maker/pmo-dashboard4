@@ -1,1 +1,1 @@
-# core package
+# empty on purpose
