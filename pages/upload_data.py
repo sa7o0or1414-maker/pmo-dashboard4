@@ -1,12 +1,5 @@
 import streamlit as st
 import pandas as pd
-import streamlit as st
-
-st.markdown("""
-<style>
-[data-testid="stSidebarNav"] { display: none; }
-</style>
-""", unsafe_allow_html=True)
 
 st.title("⬆️ رفع البيانات")
 
