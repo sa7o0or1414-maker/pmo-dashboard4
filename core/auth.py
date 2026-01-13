@@ -9,10 +9,14 @@ def require_admin():
         st.stop()
 
 def login(username, password):
-    if (
-        username == st.secrets["ADMIN_USER"]
-        and password == st.secrets["ADMIN_PASSWORD"]
-    ):
+    try:
+        admin_user = st.secrets["ADMIN_USER"]
+        admin_pass = st.secrets["ADMIN_PASSWORD"]
+    except Exception:
+        st.error("Secrets غير مضافة في Streamlit Cloud (ADMIN_USER / ADMIN_PASSWORD)")
+        st.stop()
+
+    if username == admin_user and password == admin_pass:
         st.session_state["is_admin"] = True
         return True
     return False
