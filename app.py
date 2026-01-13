@@ -10,4 +10,4 @@ apply_branding(cfg)
 render_sidebar()
 
 st.title("لوحة معلومات PMO")
-st.write("اختر صفحة من القائمة الجانبية")
+st.write("اختاري صفحة من القائمة الجانبية")
