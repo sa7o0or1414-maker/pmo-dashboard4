@@ -1,14 +1,16 @@
 import streamlit as st
 
+# ✅ لازم يكون أول أمر Streamlit
 st.set_page_config(
     page_title="لوحة المعلومات",
     layout="wide"
 )
 
+# ❗ بعده فقط نسمح بأي شيء
 from core.ui import hide_streamlit_default_nav
-hide_streamlit_default_nav()
-
 from core.sidebar import render_sidebar
+
+hide_streamlit_default_nav()
 render_sidebar()
 
 
