@@ -5,13 +5,10 @@ import plotly.express as px
 # ======================================================
 # Page Config (مرة واحدة فقط)
 # ======================================================
-st.set_page_config(
-    page_title="لوحة المعلومات",
-    layout="wide"
-)
+st.set_page_config(page_title="لوحة المعلومات", layout="wide")
 
 # ======================================================
-# تحميل البيانات
+# Load Data
 # ======================================================
 from core.data_io import prepare_dashboard_data
 
@@ -21,7 +18,7 @@ if df is None or df.empty:
     st.stop()
 
 # ======================================================
-# Helpers ذكية
+# Helper Functions (ذكية – بدون أسماء أعمدة ثابتة)
 # ======================================================
 def pick_col(df, keywords, numeric_only=True):
     for c in df.columns:
@@ -51,7 +48,7 @@ def count_delayed(series):
         return 0
 
 # ======================================================
-# الفلاتر
+# Filters
 # ======================================================
 st.markdown("### الفلاتر")
 
@@ -77,7 +74,7 @@ if sel_status != "الكل" and "status" in fdf.columns:
     fdf = fdf[fdf["status"] == sel_status]
 
 # ======================================================
-# حساب المؤشرات الأساسية
+# KPI Calculations
 # ======================================================
 total_projects = len(fdf)
 
@@ -98,11 +95,10 @@ if progress_col:
 delay_col = detect_delay_column(fdf)
 actual_delayed = count_delayed(fdf[delay_col]) if delay_col else 0
 
-delay_ratio = (actual_delayed / total_projects) if total_projects else 0
 spend_ratio = (spent / total_value) if total_value else 0
 
 # ======================================================
-# كروت المؤشرات
+# KPI Cards
 # ======================================================
 st.markdown("## نظرة عامة")
 
@@ -116,34 +112,30 @@ c5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%" if total_value else "
 st.markdown("---")
 
 # ======================================================
-# 🔮 التنبؤ الذكي (بدون ML)
+# 🔮 Smart Prediction Engine
 # ======================================================
 pred_df = fdf.copy()
 risk_score = pd.Series(0, index=pred_df.index)
-reasons = []
 
-# عامل الإنجاز
+# Progress impact
 if progress_col:
     prog = pd.to_numeric(pred_df[progress_col], errors="coerce").fillna(0)
     risk_score += (100 - prog) * 0.4
-    reasons.append("انخفاض نسبة الإنجاز")
 
-# عامل الصرف
+# Spending impact
 if spent_col and value_col:
     spent_v = pd.to_numeric(pred_df[spent_col], errors="coerce").fillna(0)
     value_v = pd.to_numeric(pred_df[value_col], errors="coerce").replace(0, pd.NA)
-    spend_ratio_row = (spent_v / value_v).fillna(0)
-    risk_score += (1 - spend_ratio_row) * 30
-    reasons.append("تأخر الصرف")
+    ratio = (spent_v / value_v).fillna(0)
+    risk_score += (1 - ratio) * 30
 
-# عامل نصي (أي عمود فيه كلمات سلبية)
-text_cols = [c for c in pred_df.columns if pred_df[c].dtype == object]
+# Textual risk signals
 bad_words = ["تأخير","متأخر","تعثر","delay","issue","risk","problem"]
-
-for c in text_cols:
-    risk_score += pred_df[c].astype(str).str.lower().apply(
-        lambda x: 20 if any(w in x for w in bad_words) else 0
-    )
+for c in pred_df.columns:
+    if pred_df[c].dtype == object:
+        risk_score += pred_df[c].astype(str).str.lower().apply(
+            lambda x: 15 if any(w in x for w in bad_words) else 0
+        )
 
 pred_df["risk_score"] = risk_score.clip(0,100)
 
@@ -154,18 +146,16 @@ def risk_level(x):
         return "متوسط", "🟠", "متابعة قريبة"
     return "منخفض", "🟢", "الوضع مستقر"
 
-pred_df[["risk_level","risk_color","action"]] = pred_df["risk_score"].apply(
+pred_df[["مستوى الخطر","رمز","توصية"]] = pred_df["risk_score"].apply(
     lambda x: pd.Series(risk_level(x))
 )
 
-pred_df["reason"] = (
-    "تحليل آلي يشير لاحتمالية التأخير بناءً على الأداء الحالي"
-)
+pred_df["سبب التوقع"] = "تحليل آلي للأداء والصرف والملاحظات النصية"
 
 predicted_df = pred_df[pred_df["risk_score"] >= 40]
 
 # ======================================================
-# Toggle (فتح / إغلاق)
+# Toggle Buttons
 # ======================================================
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = None
@@ -182,16 +172,12 @@ with b2:
         toggle("pred")
 
 # ======================================================
-# النتائج
+# Results
 # ======================================================
 if st.session_state.view_mode == "actual":
     st.subheader("المشاريع المتأخرة فعليًا")
     if delay_col:
-        st.dataframe(
-            fdf[fdf[delay_col].notna()],
-            use_container_width=True,
-            height=420
-        )
+        st.dataframe(fdf[fdf[delay_col].notna()], use_container_width=True, height=420)
     else:
         st.info("لا يوجد عمود يدل على التأخير في الملف")
 
@@ -203,20 +189,16 @@ elif st.session_state.view_mode == "pred":
         show_cols = [
             c for c in [
                 "entity","municipality","status",
-                "risk_score","risk_level","risk_color",
-                "reason","action"
+                "risk_score","مستوى الخطر","رمز",
+                "سبب التوقع","توصية"
             ] if c in predicted_df.columns
         ]
-        st.dataframe(
-            predicted_df[show_cols],
-            use_container_width=True,
-            height=420
-        )
+        st.dataframe(predicted_df[show_cols], use_container_width=True, height=420)
 
 st.markdown("---")
 
 # ======================================================
-# الرسوم
+# Charts
 # ======================================================
 left,right = st.columns(2)
 
