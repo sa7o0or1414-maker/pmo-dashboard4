@@ -20,7 +20,7 @@ st.title("الصفحة الرئيسية")
 # ===================== Load Data =====================
 df = prepare_dashboard_data()
 if df is None or df.empty:
-    st.info("لا توجد بيانات. ارفعي ملف Excel من صفحة (رفع البيانات).")
+    st.info("لا توجد بيانات حالياً. ارفعي ملف Excel من صفحة (رفع البيانات).")
     st.stop()
 
 df = build_delay_outputs(df)
@@ -47,27 +47,47 @@ if entity != "الكل" and "entity" in fdf.columns:
 if status != "الكل" and "status" in fdf.columns:
     fdf = fdf[fdf["status"] == status]
 
-# ===================== AUTO KPI CARDS =====================
-numeric_cols = [
-    c for c in fdf.columns
-    if pd.api.types.is_numeric_dtype(fdf[c])
-    and c not in ["delay_risk", "days_to_deadline"]
-]
+# =====================================================
+# 🔹 ملخص عام (بعد الفلاتر مباشرة)
+# =====================================================
+st.markdown("### ملخص عام")
 
-if numeric_cols:
-    st.markdown("### مؤشرات رقمية من الملف")
-    cols = st.columns(min(4, len(numeric_cols)))
-    for i, col in enumerate(numeric_cols[:4]):
-        with cols[i]:
-            st.metric(
-                label=col,
-                value=f"{fdf[col].sum(skipna=True):,.0f}",
-                delta=f"متوسط {fdf[col].mean(skipna=True):,.1f}"
-            )
+c1, c2, c3, c4 = st.columns(4)
+
+with c1:
+    st.metric("عدد المشاريع", len(fdf))
+
+with c2:
+    st.metric(
+        "عدد الجهات",
+        fdf["entity"].nunique() if "entity" in fdf.columns else "—"
+    )
+
+with c3:
+    st.metric(
+        "عدد البلديات",
+        fdf["municipality"].nunique() if "municipality" in fdf.columns else "—"
+    )
+
+with c4:
+    # اختيار أفضل عمود مالي تلقائيًا
+    money_cols = [
+        c for c in fdf.columns
+        if pd.api.types.is_numeric_dtype(fdf[c])
+        and any(k in c.lower() for k in ["budget", "cost", "value", "amount", "قيمة", "تكلفة", "ميزانية"])
+    ]
+
+    if money_cols:
+        st.metric(
+            f"إجمالي {money_cols[0]}",
+            f"{fdf[money_cols[0]].sum(skipna=True):,.0f}"
+        )
+    else:
+        st.metric("إجمالي القيمة", "—")
 
 st.markdown("---")
 
-# ===================== Risk Buttons =====================
+# ===================== View Buttons =====================
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "overview"
 
@@ -85,7 +105,7 @@ with b3:
 # ===================== Tables =====================
 def show_table(title, tdf, extra_cols=None):
     if tdf.empty:
-        st.info("لا توجد نتائج")
+        st.info("لا توجد نتائج حسب الفلاتر الحالية")
         return
 
     cols = list(tdf.columns)
@@ -93,6 +113,7 @@ def show_table(title, tdf, extra_cols=None):
         cols = [c for c in cols if c not in extra_cols] + extra_cols
 
     sort_col = "delay_risk" if "delay_risk" in tdf.columns else cols[0]
+
     st.subheader(title)
     st.dataframe(
         tdf.sort_values(by=sort_col, ascending=False)[cols],
@@ -100,16 +121,19 @@ def show_table(title, tdf, extra_cols=None):
     )
 
 if st.session_state.view_mode == "actual":
-    show_table("المشاريع المتأخرة فعليًا", fdf[fdf["is_delayed_actual"] == 1])
+    show_table(
+        "المشاريع المتأخرة فعليًا",
+        fdf[fdf["is_delayed_actual"] == 1]
+    )
 
 elif st.session_state.view_mode == "pred":
     show_table(
         "المشاريع المتوقع تأخرها",
         fdf[fdf["is_delayed_predicted"] == 1],
         extra_cols=[
-            "risk_color",
-            "risk_level",
             "delay_risk",
+            "risk_level",
+            "risk_color",
             "reason_short",
             "reason_detail",
             "action_recommendation",
