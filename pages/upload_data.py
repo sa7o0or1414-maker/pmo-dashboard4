@@ -7,10 +7,15 @@ st.set_page_config(layout="wide")
 
 ensure_defaults()
 cfg = load_config()
+
 apply_branding(cfg)
 render_sidebar()
+
 require_admin()
 
-st.title("⬆️ رفع البيانات")
+st.title("رفع البيانات")
 
-st.file_uploader("ارفع ملف Excel", type=["xlsx"])
+uploaded_file = st.file_uploader("ارفع ملف Excel", type=["xlsx"])
+
+if uploaded_file:
+    st.success("تم رفع الملف بنجاح (سيتم ربطه بالداشبورد لاحقًا)")
