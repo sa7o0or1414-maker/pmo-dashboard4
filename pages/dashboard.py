@@ -122,9 +122,21 @@ with details_anchor.container():
     if st.session_state.view_mode == "actual":
         actual_df = fdf[fdf["is_delayed_actual"] == 1].copy()
         show_table("المشاريع المتأخرة فعليًا", actual_df)
-    elif st.session_state.view_mode == "pred":
-        pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
-        show_table("المشاريع المتوقع تأخرها (مع سبب التوقع)", pred_df, extra_cols=["delay_risk", "delay_reason"])
+elif st.session_state.view_mode == "pred":
+    pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
+    show_table(
+        "المشاريع المتوقع تأخرها",
+        pred_df,
+        extra_cols=[
+            "risk_color",
+            "risk_level",
+            "delay_risk",
+            "reason_short",
+            "reason_detail",
+            "action_recommendation",
+        ],
+    )
+
     else:
         st.info("اضغطي على أحد الأزرار لعرض التفاصيل هنا مباشرة.")
 
