@@ -14,10 +14,22 @@ def render_sidebar():
             label="⬆️ رفع البيانات"
         )
 
+        st.page_link(
+            "pages/admin_login.py",
+            label="🔐 تسجيل الدخول"
+        )
+
+        # تظهر فقط لو الأدمن مسجل دخول
+        if st.session_state.get("is_admin"):
+            st.page_link(
+                "pages/settings.py",
+                label="⚙️ الإعدادات"
+            )
+
         st.markdown("---")
         st.markdown(
             """
-            <div style="font-size:12px;opacity:0.7">
+            <div style="font-size:12px;opacity:0.7;text-align:center">
             PMO Dashboard<br>
             تحليل ومتابعة المشاريع
             </div>
