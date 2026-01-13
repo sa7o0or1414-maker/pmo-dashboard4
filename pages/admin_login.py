@@ -7,24 +7,22 @@ st.set_page_config(layout="wide")
 
 ensure_defaults()
 cfg = load_config()
-
 apply_branding(cfg)
 render_sidebar()
 
 st.title("دخول المشرف")
 
 if is_admin():
-    st.success("تم تسجيل الدخول كمشرف")
+    st.success("تم تسجيل الدخول")
     if st.button("تسجيل الخروج"):
         logout()
         st.rerun()
 else:
     username = st.text_input("اسم المستخدم")
     password = st.text_input("كلمة المرور", type="password")
-
     if st.button("دخول"):
         if login(username, password):
-            st.success("تم تسجيل الدخول بنجاح")
+            st.success("تم الدخول")
             st.rerun()
         else:
-            st.error("اسم المستخدم أو كلمة المرور غير صحيحة")
+            st.error("بيانات غير صحيحة")
