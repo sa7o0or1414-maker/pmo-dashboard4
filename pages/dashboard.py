@@ -18,9 +18,6 @@ if df.empty:
     st.info("No data available")
     st.stop()
 
-pipe, auc = train_delay_model(df)
-if pipe:
-    df = predict_delay(pipe, df)
-    st.caption(f"Model AUC: {auc:.2f}")
+st.info("Predictive analytics will be enabled once Python ML support is available.")
 
 st.dataframe(df, use_container_width=True)
