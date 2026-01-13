@@ -1,32 +1,45 @@
 import streamlit as st
 
+# =========================================
+# Page Config (أول أمر)
+# =========================================
 st.set_page_config(
     page_title="تسجيل دخول الأدمن",
     layout="wide"
 )
 
 from core.ui import hide_streamlit_default_nav
-hide_streamlit_default_nav()
-
 from core.sidebar import render_sidebar
+
+hide_streamlit_default_nav()
 render_sidebar()
 
-cfg = load_config()
+# =========================================
+# Admin Login Logic
+# =========================================
+st.markdown("## 🔐 تسجيل دخول الأدمن")
+
+# بيانات دخول مؤقتة (لاحقًا نربطها بإعدادات)
+ADMIN_USER = "admin"
+ADMIN_PASS = "admin123"
 
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
-st.title("دخول الأدمن")
+if st.session_state.is_admin:
+    st.success("✅ تم تسجيل الدخول كمسؤول")
+    st.info("يمكنك الآن الدخول إلى صفحة الإعدادات من القائمة الجانبية")
+    st.stop()
 
-u = st.text_input("اسم المستخدم")
-p = st.text_input("كلمة المرور", type="password")
+with st.form("login_form"):
+    username = st.text_input("اسم المستخدم")
+    password = st.text_input("كلمة المرور", type="password")
+    submit = st.form_submit_button("تسجيل الدخول")
 
-if st.button("دخول"):
-    admin = cfg["admin"]
-    if u == admin["username"] and (
-        admin["password_hash"] == "" or verify_password(p, admin["password_hash"])
-    ):
+if submit:
+    if username == ADMIN_USER and password == ADMIN_PASS:
         st.session_state.is_admin = True
-        st.success("تم الدخول بنجاح")
+        st.success("تم تسجيل الدخول بنجاح")
+        st.experimental_rerun()
     else:
-        st.error("بيانات غير صحيحة")
+        st.error("بيانات الدخول غير صحيحة")
