@@ -6,6 +6,7 @@ from core.config import load_config, apply_branding
 from core.data_io import prepare_dashboard_data
 from core.ml import train_delay_model, predict_delay_risk
 from core.features import build_features, reason_rules
+from core.sidebar import render_sidebar
 
 
 st.set_page_config(page_title="Dashboard", layout="wide")
