@@ -1,25 +1,26 @@
-import streamlit as st
+import os
+import base64
+import hashlib
+import hmac
 
-def is_admin():
-    return st.session_state.get("is_admin", False)
 
-def require_admin():
-    if not is_admin():
-        st.warning("الدخول مخصص للمشرف فقط")
-        st.stop()
+def hash_password(password: str, salt: bytes | None = None, iterations: int = 200_000) -> str:
+    """
+    Returns a compact string: base64(salt)$base64(hash)$iterations
+    """
+    if salt is None:
+        salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations, dklen=32)
+    return f"{base64.b64encode(salt).decode()}${base64.b64encode(dk).decode()}${iterations}"
 
-def login(username, password):
+
+def verify_password(password: str, stored: str) -> bool:
     try:
-        admin_user = st.secrets["ADMIN_USER"]
-        admin_pass = st.secrets["ADMIN_PASSWORD"]
+        salt_b64, dk_b64, it_str = stored.split("$")
+        salt = base64.b64decode(salt_b64.encode())
+        dk_expected = base64.b64decode(dk_b64.encode())
+        iterations = int(it_str)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations, dklen=32)
+        return hmac.compare_digest(dk, dk_expected)
     except Exception:
-        st.error("Secrets غير مضافة في Streamlit Cloud (ADMIN_USER / ADMIN_PASSWORD)")
-        st.stop()
-
-    if username == admin_user and password == admin_pass:
-        st.session_state["is_admin"] = True
-        return True
-    return False
-
-def logout():
-    st.session_state["is_admin"] = False
+        return False
