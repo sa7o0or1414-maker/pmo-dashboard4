@@ -2,82 +2,62 @@ import os
 import pandas as pd
 
 DATA_PATH = "data/current.xlsx"
-SHEET_NAME = None  # read first sheet automatically
 
-
-# Logical fields the dashboard needs
-LOGICAL_FIELDS = {
-    "municipality": ["municipality", "city", "municipal", "البلدية", "مدينة"],
-    "entity": ["entity", "department", "owner", "الجهة", "الإدارة"],
-    "project": ["project", "project_name", "initiative", "المشروع"],
-    "status": ["status", "state", "الحالة", "وضع المشروع"],
-    "budget": ["budget", "cost", "amount", "الميزانية", "التكلفة"],
-    "progress": ["progress", "completion", "percent", "نسبة الانجاز", "الانجاز"],
-    "start_date": ["start_date", "start", "تاريخ البداية"],
-    "end_date": ["end_date", "end", "تاريخ النهاية"],
-    "actual_end_date": ["actual_end_date", "actual_end", "تاريخ الانتهاء الفعلي"],
-    "risk": ["risk", "risks", "المخاطر"],
-    "notes": ["notes", "comments", "remarks", "ملاحظات"],
+COLUMN_ALIASES = {
+    "municipality": ["municipality", "city", "البلدية"],
+    "entity": ["entity", "department", "الجهة"],
+    "project": ["project", "project name", "المشروع"],
+    "status": ["status", "الحالة"],
+    "budget": ["budget", "cost", "الميزانية"],
+    "progress": ["progress", "completion", "نسبة الانجاز"],
+    "start_date": ["start", "start date", "تاريخ البداية"],
+    "end_date": ["end", "end date", "تاريخ النهاية"],
+    "actual_end_date": ["actual end", "تاريخ الانتهاء"],
 }
-
 
 def ensure_data_file():
     os.makedirs("data", exist_ok=True)
     if not os.path.exists(DATA_PATH):
-        df = pd.DataFrame()
-        df.to_excel(DATA_PATH, index=False)
+        pd.DataFrame().to_excel(DATA_PATH, index=False)
 
-
-def read_data(path: str = DATA_PATH) -> pd.DataFrame:
-    df = pd.read_excel(path, sheet_name=SHEET_NAME)
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
-
-
-def save_uploaded_file(uploaded_file):
-    os.makedirs("data", exist_ok=True)
+def save_uploaded_file(file):
     with open(DATA_PATH, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+        f.write(file.getbuffer())
 
+def read_raw_data():
+    return pd.read_excel(DATA_PATH)
 
-def map_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Maps any column names in Excel to logical dashboard fields.
-    """
+def normalize_columns(df):
     mapped = {}
-    lower_cols = {c.lower(): c for c in df.columns}
-
-    for logical_name, aliases in LOGICAL_FIELDS.items():
-        for alias in aliases:
-            alias_lower = alias.lower()
-            if alias_lower in lower_cols:
-                mapped[logical_name] = lower_cols[alias_lower]
+    for logical, aliases in COLUMN_ALIASES.items():
+        for col in df.columns:
+            if col.lower().strip() in [a.lower() for a in aliases]:
+                mapped[logical] = col
                 break
 
-    normalized_df = pd.DataFrame()
+    out = pd.DataFrame()
+    for logical, col in mapped.items():
+        out[logical] = df[col]
 
-    for logical_name, original_col in mapped.items():
-        normalized_df[logical_name] = df[original_col]
-
-    return normalized_df
-
+    return out
 
 def prepare_dashboard_data():
-    """
-    Main function used by dashboard
-    """
-    df_raw = read_data()
-    df = map_columns(df_raw)
+    if not os.path.exists(DATA_PATH):
+        return pd.DataFrame()
 
-    # Type normalization
-    if "progress" in df.columns:
+    raw = read_raw_data()
+    if raw.empty:
+        return raw
+
+    df = normalize_columns(raw)
+
+    if "progress" in df:
         df["progress"] = pd.to_numeric(df["progress"], errors="coerce").clip(0, 100)
-
-    if "budget" in df.columns:
+    if "budget" in df:
         df["budget"] = pd.to_numeric(df["budget"], errors="coerce")
 
-    for col in ["start_date", "end_date", "actual_end_date"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+    for d in ["start_date", "end_date", "actual_end_date"]:
+        if d in df:
+            df[d] = pd.to_datetime(df[d], errors="coerce")
 
     return df
