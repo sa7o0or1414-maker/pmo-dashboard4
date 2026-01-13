@@ -12,11 +12,9 @@ st.set_page_config(
 ensure_defaults()
 ensure_data_file()
 
-cfg = load_config()
-apply_branding(cfg)
-
-render_sidebar(active="dashboard")
+config = load_config()
+apply_branding(config)
+render_sidebar()
 
 st.title("PMO Dashboard")
-st.caption("Use the sidebar menu to open the dashboard.")
-st.info("Open Home from the sidebar.")
+st.info("Use the sidebar menu to navigate.")
