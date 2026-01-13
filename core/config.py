@@ -5,19 +5,18 @@ import streamlit as st
 CONFIG_PATH = "data/config.json"
 
 DEFAULT_CONFIG = {
-    "site_title": "PMO Dashboard",
-    "dashboard_title": "Project Portfolio Overview",
+    "site_title": "لوحة معلومات PMO",
+    "dashboard_title": "الصفحة الرئيسية",
     "brand": {
-        "primary_color": "#7dd3fc",
-        "background_color": "#0b1220",
-        "panel_color": "#0f172a",
-        "text_color": "#e5e7eb",
-        "muted_text_color": "#94a3b8"
+        "background": "#0b1220",
+        "panel": "#0f172a",
+        "text": "#e5e7eb",
+        "muted": "#94a3b8",
+        "primary": "#38bdf8"
     },
     "layout": {
         "rtl": True,
-        "sidebar_width": 300,
-        "kpi_font_size": 26
+        "sidebar_width": 300
     }
 }
 
@@ -32,37 +31,26 @@ def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def apply_branding(cfg):
-    brand = cfg["brand"]
-    layout = cfg["layout"]
+def save_config(cfg):
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-    css = f"""
+def apply_branding(cfg):
+    b = cfg["brand"]
+    l = cfg["layout"]
+
+    st.markdown(f"""
     <style>
     html, body {{
-        direction: {"rtl" if layout["rtl"] else "ltr"};
-    }}
-    .stApp {{
-        background-color: {brand["background_color"]};
-        color: {brand["text_color"]};
+        direction: rtl;
+        background: {b['background']};
+        color: {b['text']};
     }}
     section[data-testid="stSidebar"] {{
-        min-width: {layout["sidebar_width"]}px;
+        min-width: {l['sidebar_width']}px;
     }}
-    .kpi-card {{
-        background: {brand["panel_color"]};
-        padding: 16px;
-        border-radius: 14px;
-        border: 1px solid rgba(255,255,255,.08);
-    }}
-    .kpi-label {{
-        color: {brand["muted_text_color"]};
-        font-size: 13px;
-    }}
-    .kpi-value {{
-        font-size: {layout["kpi_font_size"]}px;
-        font-weight: 700;
+    .stApp {{
+        background: {b['background']};
     }}
     </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-    st.sidebar.markdown(f"### {cfg['site_title']}")
+    """, unsafe_allow_html=True)
