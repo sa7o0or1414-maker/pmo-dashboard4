@@ -24,6 +24,7 @@ def find_col(df, keywords):
             return c
     return None
 
+
 def fmt_big(n):
     try:
         n = float(n)
@@ -35,11 +36,51 @@ def fmt_big(n):
     except Exception:
         return "—"
 
+
 def normalize_percent(series: pd.Series) -> pd.Series:
     s = pd.to_numeric(series, errors="coerce")
     if s.dropna().between(0, 1).mean() > 0.6:
         s = s * 100
     return s
+
+
+def safe_for_display(d: pd.DataFrame, max_len: int = 300) -> pd.DataFrame:
+    """تحويل أي قيم غير قابلة للتحويل في Streamlit/Arrow إلى نص آمن."""
+    out = d.copy()
+
+    for c in out.columns:
+        if pd.api.types.is_numeric_dtype(out[c]):
+            continue
+
+        def _to_safe(x):
+            if x is None:
+                return ""
+            try:
+                if isinstance(x, float) and pd.isna(x):
+                    return ""
+            except Exception:
+                pass
+
+            if isinstance(x, (list, dict, set, tuple)):
+                s = str(x)
+            else:
+                try:
+                    import numpy as np
+                    if isinstance(x, np.ndarray):
+                        s = str(x.tolist())
+                    else:
+                        s = str(x)
+                except Exception:
+                    s = str(x)
+
+            if len(s) > max_len:
+                s = s[:max_len] + "..."
+            return s
+
+        out[c] = out[c].map(_to_safe)
+
+    return out
+
 
 # -----------------------------
 # Load latest saved data
@@ -99,6 +140,7 @@ with c3:
 # KPIs
 # -----------------------------
 total_projects = len(fdf)
+
 total_value = pd.to_numeric(fdf[value_col], errors="coerce").sum() if value_col else 0
 
 avg_progress = 0
@@ -106,6 +148,7 @@ if progress_col:
     p = normalize_percent(fdf[progress_col])
     avg_progress = float(p.mean()) if p.notna().any() else 0
 
+# نسبة الصرف من عمود نسبة الصرف إن وجد
 spend_ratio = 0
 if spend_ratio_col:
     sr = normalize_percent(fdf[spend_ratio_col])
@@ -147,13 +190,19 @@ if text_cols:
 if value_col and progress_col:
     val = pd.to_numeric(tmp[value_col], errors="coerce").fillna(0)
     prog = normalize_percent(tmp[progress_col]).fillna(0)
-    risk += ((val > val.quantile(0.75)).astype(int) * (prog < 50).astype(int)) * 12
+    try:
+        hi_val = (val > val.quantile(0.75)).astype(int)
+    except Exception:
+        hi_val = 0
+    risk += (hi_val * (prog < 50).astype(int)) * 12
 
 tmp["risk_score"] = risk.clip(0, 100)
 
 def classify_and_reason(row):
-    score = row["risk_score"]
+    score = float(row.get("risk_score", 0))
     reasons = []
+
+    # الإنجاز
     if progress_col:
         p = pd.to_numeric(row.get(progress_col, None), errors="coerce")
         if pd.notna(p):
@@ -170,10 +219,15 @@ def classify_and_reason(row):
         if any(w in joined for w in bad_words):
             reasons.append("وجود إشارات نصية لمشاكل أو تأخير")
 
-    if value_col and progress_col:
+    # قيمة عالية
+    if value_col:
         v = pd.to_numeric(row.get(value_col, None), errors="coerce")
-        if pd.notna(v) and v > tmp[value_col].dropna().quantile(0.75) if value_col in tmp.columns else False:
-            reasons.append("قيمة المشروع عالية مقارنة بمتوسط المشاريع")
+        try:
+            q75 = pd.to_numeric(tmp[value_col], errors="coerce").dropna().quantile(0.75)
+            if pd.notna(v) and pd.notna(q75) and v > q75:
+                reasons.append("قيمة المشروع عالية مقارنة بمتوسط المشاريع")
+        except Exception:
+            pass
 
     if score >= 70:
         level = "عالي"
@@ -207,7 +261,7 @@ k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("عدد المشاريع", total_projects)
 k2.metric("إجمالي قيمة المشاريع", fmt_big(total_value))
 k3.metric("متوسط الإنجاز", f"{avg_progress:.1f}%")
-k4.metric("عدد المشاريع المتعثرة", actual_count)
+k4.metric("عدد المشاريع المتعثرة", actual_count, help=f"من أصل {total_projects} مشروع")
 k5.metric("نسبة الصرف", f"{spend_ratio*100:.1f}%" if spend_ratio else "—")
 
 st.markdown("---")
@@ -240,18 +294,18 @@ if st.session_state.open_panel == "actual":
         st.success("لا توجد مشاريع متأخرة فعليًا حسب الفلاتر الحالية")
     else:
         show_cols = [c for c in [project_col, entity_col, municipality_col, status_col, progress_col, value_col] if c]
-        st.dataframe(actual_df[show_cols] if show_cols else actual_df, use_container_width=True, height=420)
+        table_df = actual_df[show_cols] if show_cols else actual_df
+        st.dataframe(safe_for_display(table_df), use_container_width=True, height=420)
 
 if st.session_state.open_panel == "pred":
     st.subheader("المشاريع المتوقع تأخرها (تحليل ذكي)")
     if pred_df.empty:
         st.success("لا توجد مشاريع عالية/متوسطة المخاطر حسب الفلاتر الحالية")
     else:
-        # أعمدة العرض الأساسية + سبب التوقع بالعربي
         cols = [c for c in [project_col, entity_col, municipality_col, status_col] if c]
         extra = ["risk_score", "مستوى الخطر", "سبب مختصر", "سبب تفصيلي"]
         cols = cols + [c for c in extra if c in pred_df.columns]
-        st.dataframe(pred_df[cols], use_container_width=True, height=420)
+        st.dataframe(safe_for_display(pred_df[cols]), use_container_width=True, height=420)
 
 st.markdown("---")
 
@@ -299,4 +353,4 @@ with right:
         st.info("لا يوجد عمود للجهة/البلدية أو لا توجد بيانات بعد الفلاتر.")
 
 with st.expander("عرض البيانات بعد الفلاتر"):
-    st.dataframe(fdf, use_container_width=True)
+    st.dataframe(safe_for_display(fdf), use_container_width=True)
