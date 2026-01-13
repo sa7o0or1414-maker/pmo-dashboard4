@@ -1,11 +1,6 @@
 import streamlit as st
 import streamlit as st
 
-st.markdown("""
-<style>
-[data-testid="stSidebarNav"] { display: none; }
-</style>
-""", unsafe_allow_html=True)
 
 # =========================================
 # Page Config (أول أمر)
