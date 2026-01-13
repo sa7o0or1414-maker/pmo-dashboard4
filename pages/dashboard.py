@@ -8,6 +8,7 @@ from core.data_io import prepare_dashboard_data
 from core.sidebar import render_sidebar
 from core.config import ensure_defaults, load_config, apply_branding
 
+# ===================== Page Config =====================
 st.set_page_config(layout="wide")
 
 ensure_defaults()
@@ -23,11 +24,13 @@ if df is None or df.empty:
     st.info("يرجى رفع ملف Excel من صفحة (رفع البيانات)")
     st.stop()
 
-# ✅ import ديناميكي (يكسر الـ Circular Import نهائيًا)
+# ✅ تحميل التنبؤ بدون Circular Import
 predict = importlib.import_module("core.predict")
 df = predict.build_delay_outputs(df)
 
 # ===================== Filters =====================
+st.markdown("### الفلاتر")
+
 def opt(col):
     if col not in df.columns:
         return ["الكل"]
@@ -69,47 +72,77 @@ with c3:
     )
 
 with c4:
-    st.metric(
-        "المشاريع المتوقع تأخرها",
-        int(fdf["is_delayed_predicted"].sum())
-    )
+    st.metric("المشاريع المتوقع تأخرها", int(fdf["is_delayed_predicted"].sum()))
 
 st.markdown("---")
 
-# ===================== Tables =====================
+# =====================================================
+# 🧠 التحليل الذكي (أزرار تفاعلية)
+# =====================================================
+st.markdown("### التحليل الذكي للمشاريع")
+
+if "view_mode" not in st.session_state:
+    st.session_state.view_mode = None
+
 b1, b2 = st.columns(2)
 
 with b1:
-    st.subheader("المشاريع المتأخرة فعليًا")
-    st.dataframe(
-        fdf[fdf["is_delayed_actual"] == 1],
-        use_container_width=True,
-        height=400
-    )
+    if st.button("🟥 المشاريع المتأخرة فعليًا", use_container_width=True):
+        st.session_state.view_mode = "actual"
 
 with b2:
-    st.subheader("المشاريع المتوقع تأخرها")
-    show_cols = [
-        c for c in [
-            "project",
-            "entity",
-            "municipality",
-            "risk_color",
-            "risk_level",
-            "delay_risk",
-            "reason_short",
-            "action_recommendation",
+    if st.button("🟧 المشاريع المتوقع تأخرها", use_container_width=True):
+        st.session_state.view_mode = "pred"
+
+# ===================== Results =====================
+st.markdown("---")
+
+if st.session_state.view_mode == "actual":
+    st.subheader("المشاريع المتأخرة فعليًا")
+
+    df_actual = fdf[fdf["is_delayed_actual"] == 1]
+
+    if df_actual.empty:
+        st.info("لا توجد مشاريع متأخرة فعليًا حسب البيانات الحالية")
+    else:
+        st.dataframe(
+            df_actual,
+            use_container_width=True,
+            height=450
+        )
+
+elif st.session_state.view_mode == "pred":
+    st.subheader("المشاريع المتوقع تأخرها (تحليل تنبؤي ذكي)")
+
+    df_pred = fdf[fdf["is_delayed_predicted"] == 1]
+
+    if df_pred.empty:
+        st.info("لا توجد مشاريع عالية الخطورة حاليًا")
+    else:
+        show_cols = [
+            c for c in [
+                "project",
+                "entity",
+                "municipality",
+                "risk_color",
+                "risk_level",
+                "delay_risk",
+                "reason_short",
+                "reason_detail",
+                "action_recommendation",
+            ]
+            if c in df_pred.columns
         ]
-        if c in fdf.columns
-    ]
-    st.dataframe(
-        fdf[fdf["is_delayed_predicted"] == 1][show_cols],
-        use_container_width=True,
-        height=400
-    )
+
+        st.dataframe(
+            df_pred[show_cols],
+            use_container_width=True,
+            height=450
+        )
 
 # ===================== Charts =====================
 st.markdown("---")
+st.subheader("تحليل الحالات")
 
 if "status" in fdf.columns:
     fig = px.histogram(
@@ -120,6 +153,7 @@ if "status" in fdf.columns:
     )
     st.plotly_chart(fig, use_container_width=True)
 
+# Gauge: نسبة التعثر
 delayed_pct = (fdf["is_delayed_actual"].mean() * 100) if len(fdf) else 0
 fig = go.Figure(go.Indicator(
     mode="gauge+number",
