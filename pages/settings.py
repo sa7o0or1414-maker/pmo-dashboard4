@@ -1,6 +1,8 @@
 import os
 import streamlit as st
 
+from core.ui import hide_streamlit_default_nav
+hide_streamlit_default_nav()
 from core.config import ensure_defaults, load_config, save_config, restore_backup, reset_to_defaults, ASSETS_DIR
 from core.auth import hash_password
 
