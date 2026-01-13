@@ -17,83 +17,61 @@ DEFAULT_CONFIG = {
     },
     "layout": {
         "rtl": True,
-        "kpi_font_size": 28,
-        "sidebar_width": 320
+        "sidebar_width": 320,
+        "kpi_font_size": 28
     }
 }
-
 
 def ensure_defaults():
     os.makedirs("data", exist_ok=True)
     os.makedirs("assets", exist_ok=True)
-
     if not os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
-
 
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def save_config(config: dict):
+def save_config(cfg):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-
-def apply_branding(config: dict):
-    brand = config.get("brand", {})
-    layout = config.get("layout", {})
-
-    rtl = layout.get("rtl", True)
-    sidebar_width = layout.get("sidebar_width", 320)
-    kpi_font_size = layout.get("kpi_font_size", 28)
+def apply_branding(cfg):
+    brand = cfg["brand"]
+    layout = cfg["layout"]
 
     css = f"""
     <style>
-        :root {{
-            --primary-color: {brand.get("primary_color")};
-            --background-color: {brand.get("background_color")};
-            --panel-color: {brand.get("panel_color")};
-            --text-color: {brand.get("text_color")};
-            --muted-text-color: {brand.get("muted_text_color")};
-        }}
-
-        .stApp {{
-            background-color: var(--background-color);
-            color: var(--text-color);
-        }}
-
-        section[data-testid="stSidebar"] {{
-            min-width: {sidebar_width}px;
-        }}
-
-        {"html, body { direction: rtl; text-align: right; }" if rtl else ""}
-
-        .kpi-card {{
-            background-color: var(--panel-color);
-            border-radius: 14px;
-            padding: 16px;
-            border: 1px solid rgba(255,255,255,0.08);
-        }}
-
-        .kpi-label {{
-            color: var(--muted-text-color);
-            font-size: 13px;
-        }}
-
-        .kpi-value {{
-            font-size: {kpi_font_size}px;
-            font-weight: 700;
-        }}
+    html, body {{
+        direction: {"rtl" if layout["rtl"] else "ltr"};
+    }}
+    .stApp {{
+        background-color: {brand["background_color"]};
+        color: {brand["text_color"]};
+    }}
+    section[data-testid="stSidebar"] {{
+        min-width: {layout["sidebar_width"]}px;
+    }}
+    .kpi-card {{
+        background: {brand["panel_color"]};
+        padding: 16px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,.08);
+    }}
+    .kpi-label {{
+        color: {brand["muted_text_color"]};
+        font-size: 13px;
+    }}
+    .kpi-value {{
+        font-size: {layout["kpi_font_size"]}px;
+        font-weight: 700;
+    }}
     </style>
     """
-
     st.markdown(css, unsafe_allow_html=True)
 
-    logo_path = config.get("logo_path")
-    if logo_path and os.path.exists(logo_path):
-        st.sidebar.image(logo_path, use_column_width=True)
+    if os.path.exists(cfg["logo_path"]):
+        st.sidebar.image(cfg["logo_path"], use_column_width=True)
 
-    st.sidebar.markdown(f"### {config.get('site_title')}")
+    st.sidebar.markdown(f"### {cfg['site_title']}")
