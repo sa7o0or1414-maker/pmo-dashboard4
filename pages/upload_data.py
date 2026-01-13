@@ -1,30 +1,38 @@
 import streamlit as st
+import pandas as pd
 
-# 1) لازم أول سطر Streamlit
 st.set_page_config(page_title="رفع البيانات", layout="wide")
 
-from core.ui import hide_streamlit_default_nav
-from core.sidebar import render_sidebar
-from core.data_io import save_uploaded_excel, load_latest_data
+# إخفاء السايدبار الافتراضي
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"] > div:first-child {
+        display: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# 2) اخفاء قائمة ستريملت الافتراضية
-hide_streamlit_default_nav()
-# 3) سايدبارنا العربي
-render_sidebar()
+st.title("📤 رفع ملف البيانات")
 
-st.markdown("## رفع البيانات")
-st.write("ارفعي ملف Excel وسيتم تحديث الصفحة الرئيسية تلقائيًا.")
+uploaded_file = st.file_uploader(
+    "ارفع ملف المشاريع (Excel)",
+    type=["xlsx", "xls"]
+)
 
-uploaded = st.file_uploader("اختاري ملف Excel", type=["xlsx"])
+if uploaded_file:
+    try:
+        df = pd.read_excel(uploaded_file)
 
-if uploaded:
-    save_uploaded_excel(uploaded)
-    st.success("تم رفع الملف وحفظه بنجاح ✅")
+        # تنظيف عام
+        df.columns = df.columns.astype(str).str.strip()
 
-    # عرض معاينة سريعة للتأكد
-    df = load_latest_data()
-    st.write("معاينة من البيانات بعد الرفع:")
-    st.dataframe(df.head(30), use_container_width=True)
+        st.session_state["data"] = df
+        st.success("✅ تم رفع الملف بنجاح وسيتم استخدامه في لوحة التحكم")
 
-    # زر يفتح لك الصفحة الرئيسية بعد الحفظ
-    st.page_link("pages/dashboard.py", label="الانتقال إلى الصفحة الرئيسية", icon="🏠")
+        st.dataframe(df.head(), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"❌ خطأ في قراءة الملف: {e}")
