@@ -9,5 +9,5 @@ cfg = load_config()
 apply_branding(cfg)
 render_sidebar()
 
-st.title("PMO Dashboard")
-st.info("Use the sidebar to navigate.")
+st.title("لوحة معلومات PMO")
+st.write("اختر صفحة من القائمة الجانبية")
