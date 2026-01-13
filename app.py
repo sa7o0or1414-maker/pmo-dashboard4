@@ -1,10 +1,10 @@
 import streamlit as st
 from core.config import ensure_defaults, load_config, apply_branding
 from core.data_io import ensure_data_file
+from core.sidebar import render_sidebar
 
 st.set_page_config(
     page_title="PMO Dashboard",
-    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -15,6 +15,8 @@ ensure_data_file()
 cfg = load_config()
 apply_branding(cfg)
 
-st.sidebar.success("Select a page from the sidebar.")
+render_sidebar(active="dashboard")
+
 st.title("PMO Dashboard")
-st.caption("Go to the Dashboard page from the sidebar navigation.")
+st.caption("Use the sidebar menu to open the dashboard.")
+st.info("Open Home from the sidebar.")
