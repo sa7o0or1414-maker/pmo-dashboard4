@@ -16,14 +16,15 @@ render_sidebar()
 
 st.title("الصفحة الرئيسية")
 
+# ===================== Load Data =====================
 df = prepare_dashboard_data()
 if df is None or df.empty:
-    st.info("ما فيه بيانات. ارفعي ملف Excel من صفحة (رفع البيانات).")
+    st.info("لا توجد بيانات حالياً. ارفعي ملف Excel من صفحة (رفع البيانات).")
     st.stop()
 
 df = build_delay_outputs(df)
 
-# ---------------- Filters ----------------
+# ===================== Filters =====================
 st.sidebar.markdown("---")
 st.sidebar.markdown("### الفلاتر")
 
@@ -45,7 +46,7 @@ if entity != "الكل" and "entity" in fdf.columns:
 if status != "الكل" and "status" in fdf.columns:
     fdf = fdf[fdf["status"] == status]
 
-# ---------------- KPIs ----------------
+# ===================== KPIs =====================
 total_projects = len(fdf)
 total_budget = fdf["budget"].sum() if "budget" in fdf.columns else None
 avg_progress = fdf["progress"].mean() if "progress" in fdf.columns else None
@@ -60,11 +61,11 @@ with c2:
 with c3:
     st.metric("متوسط الإنجاز", f"{avg_progress:.1f}%" if avg_progress is not None else "—")
 with c4:
-    st.metric("التنبيهات", f"متأخر: {actual_delayed} | متوقع: {pred_delayed}")
+    st.metric("التنبيهات", f"متأخر فعليًا: {actual_delayed} | متوقع: {pred_delayed}")
 
 st.markdown("---")
 
-# ---------------- View Mode ----------------
+# ===================== View Mode Buttons =====================
 if "view_mode" not in st.session_state:
     st.session_state.view_mode = "overview"
 
@@ -79,7 +80,7 @@ with b3:
     if st.button("ملخص", use_container_width=True):
         st.session_state.view_mode = "overview"
 
-# ---------------- Drilldown (appears directly under buttons) ----------------
+# ===================== Drilldown Tables =====================
 st.markdown("### التفاصيل")
 details_anchor = st.empty()
 
@@ -88,7 +89,6 @@ def show_table(title, tdf, extra_cols=None):
         st.info("لا توجد نتائج حسب الفلاتر الحالية.")
         return
 
-    # base columns only if they exist
     base_candidates = ["municipality", "entity", "project", "status", "progress", "end_date"]
     show_cols = [c for c in base_candidates if c in tdf.columns]
 
@@ -97,52 +97,45 @@ def show_table(title, tdf, extra_cols=None):
             if c in tdf.columns and c not in show_cols:
                 show_cols.append(c)
 
-    # fallback if nothing detected
     if not show_cols:
         show_cols = list(tdf.columns)
 
-    # pick a safe sort column (must exist in tdf)
     sort_candidates = ["delay_risk", "days_to_deadline", "progress", "end_date", "project"]
-    sort_col = next((c for c in sort_candidates if c in tdf.columns), None)
-    if sort_col is None:
-        sort_col = show_cols[0]
+    sort_col = next((c for c in sort_candidates if c in tdf.columns), show_cols[0])
 
-    # ensure sort_col is included in display
-    if sort_col not in show_cols and sort_col in tdf.columns:
+    if sort_col not in show_cols:
         show_cols = [sort_col] + show_cols
 
     st.subheader(title)
-
-    # sort first, then select columns (prevents KeyError)
     sorted_df = tdf.sort_values(by=sort_col, ascending=False, kind="mergesort")
-
     st.dataframe(sorted_df[show_cols], use_container_width=True)
 
 with details_anchor.container():
     if st.session_state.view_mode == "actual":
         actual_df = fdf[fdf["is_delayed_actual"] == 1].copy()
         show_table("المشاريع المتأخرة فعليًا", actual_df)
-elif st.session_state.view_mode == "pred":
-    pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
-    show_table(
-        "المشاريع المتوقع تأخرها",
-        pred_df,
-        extra_cols=[
-            "risk_color",
-            "risk_level",
-            "delay_risk",
-            "reason_short",
-            "reason_detail",
-            "action_recommendation",
-        ],
-    )
+
+    elif st.session_state.view_mode == "pred":
+        pred_df = fdf[fdf["is_delayed_predicted"] == 1].copy()
+        show_table(
+            "المشاريع المتوقع تأخرها",
+            pred_df,
+            extra_cols=[
+                "risk_color",
+                "risk_level",
+                "delay_risk",
+                "reason_short",
+                "reason_detail",
+                "action_recommendation",
+            ],
+        )
 
     else:
         st.info("اضغطي على أحد الأزرار لعرض التفاصيل هنا مباشرة.")
 
 st.markdown("---")
 
-# ---------------- Full Analysis (below tables) ----------------
+# ===================== Full Analysis =====================
 st.subheader("تحليل الملف كامل")
 
 left, right = st.columns(2)
@@ -167,6 +160,7 @@ with right:
         fig2 = px.bar(tmp, x="municipality", y="is_delayed_actual", title="أكثر البلديات تأخرًا (فعليًا)")
         fig2.update_layout(xaxis_title="البلدية", yaxis_title="عدد المشاريع المتأخرة")
         st.plotly_chart(fig2, use_container_width=True)
+
     elif "entity" in fdf.columns:
         tmp = (
             fdf.groupby("entity")["is_delayed_actual"]
@@ -178,6 +172,7 @@ with right:
         fig2 = px.bar(tmp, x="entity", y="is_delayed_actual", title="أكثر الجهات تأخرًا (فعليًا)")
         fig2.update_layout(xaxis_title="الجهة", yaxis_title="عدد المشاريع المتأخرة")
         st.plotly_chart(fig2, use_container_width=True)
+
     else:
         st.info("لا يوجد عمود (بلدية/جهة) واضح في الملف.")
 
