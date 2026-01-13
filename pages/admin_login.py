@@ -27,6 +27,7 @@ if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
 if st.session_state.is_admin:
+    st.session_state.logged_in = True
     st.success("✅ تم تسجيل الدخول كمسؤول")
     st.info("يمكنك الآن الدخول إلى صفحة الإعدادات من القائمة الجانبية")
     st.stop()
