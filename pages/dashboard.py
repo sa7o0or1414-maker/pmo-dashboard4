@@ -79,46 +79,13 @@ with b3:
     if st.button("ملخص", use_container_width=True):
         st.session_state.view_mode = "overview"
 
-# ---------------- Drilldown (must appear directly under buttons) ----------------
+# ---------------- Drilldown (appears directly under buttons) ----------------
 st.markdown("### التفاصيل")
-details_anchor = st.empty()  # this ensures the tables show right under the buttons
+details_anchor = st.empty()
 
 def show_table(title, tdf, extra_cols=None):
     if tdf is None or tdf.empty:
         st.info("لا توجد نتائج حسب الفلاتر الحالية.")
-        return
-
-    base_candidates = ["municipality", "entity", "project", "status", "progress", "end_date"]
-    show_cols = [c for c in base_candidates if c in tdf.columns]
-
-    if extra_cols:
-        for c in extra_cols:
-            if c in tdf.columns and c not in show_cols:
-                show_cols.append(c)
-
-    if not show_cols:
-        show_cols = list(tdf.columns)
-
-    # pick safe sort column
-    sort_candidates = ["delay_risk", "days_to_deadline", "progress", "end_date", "project"]
-    sort_col = next((c for c in sort_candidates if c in tdf.columns), None)
-    if sort_col is None:
-        sort_col = show_cols[0]
-
-    # ensure sort_col is included in displayed columns
-    if sort_col not in show_cols and sort_col in tdf.columns:
-        show_cols = [sort_col] + show_cols
-
-    st.subheader(title)
-
-    # sort first on the full df (guaranteed column exists), then select columns
-    sorted_df = tdf.sort_values(by=sort_col, ascending=False, kind="mergesort")
-
-    st.dataframe(
-        sorted_df[show_cols],
-        use_container_width=True
-    )
-
         return
 
     # base columns only if they exist
@@ -130,24 +97,26 @@ def show_table(title, tdf, extra_cols=None):
             if c in tdf.columns and c not in show_cols:
                 show_cols.append(c)
 
-    # if still empty, show all columns (safe fallback)
+    # fallback if nothing detected
     if not show_cols:
         show_cols = list(tdf.columns)
 
-    # choose a safe sort column
-    sort_col = None
-    for candidate in ["delay_risk", "days_to_deadline", "progress", "project"]:
-        if candidate in tdf.columns:
-            sort_col = candidate
-            break
+    # pick a safe sort column (must exist in tdf)
+    sort_candidates = ["delay_risk", "days_to_deadline", "progress", "end_date", "project"]
+    sort_col = next((c for c in sort_candidates if c in tdf.columns), None)
     if sort_col is None:
         sort_col = show_cols[0]
 
+    # ensure sort_col is included in display
+    if sort_col not in show_cols and sort_col in tdf.columns:
+        show_cols = [sort_col] + show_cols
+
     st.subheader(title)
-    st.dataframe(
-        tdf[show_cols].sort_values(by=sort_col, ascending=False),
-        use_container_width=True
-    )
+
+    # sort first, then select columns (prevents KeyError)
+    sorted_df = tdf.sort_values(by=sort_col, ascending=False, kind="mergesort")
+
+    st.dataframe(sorted_df[show_cols], use_container_width=True)
 
 with details_anchor.container():
     if st.session_state.view_mode == "actual":
@@ -176,12 +145,24 @@ with left:
 
 with right:
     if "municipality" in fdf.columns:
-        tmp = fdf.groupby("municipality")["is_delayed_actual"].sum().sort_values(ascending=False).head(15).reset_index()
+        tmp = (
+            fdf.groupby("municipality")["is_delayed_actual"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(15)
+            .reset_index()
+        )
         fig2 = px.bar(tmp, x="municipality", y="is_delayed_actual", title="أكثر البلديات تأخرًا (فعليًا)")
         fig2.update_layout(xaxis_title="البلدية", yaxis_title="عدد المشاريع المتأخرة")
         st.plotly_chart(fig2, use_container_width=True)
     elif "entity" in fdf.columns:
-        tmp = fdf.groupby("entity")["is_delayed_actual"].sum().sort_values(ascending=False).head(15).reset_index()
+        tmp = (
+            fdf.groupby("entity")["is_delayed_actual"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(15)
+            .reset_index()
+        )
         fig2 = px.bar(tmp, x="entity", y="is_delayed_actual", title="أكثر الجهات تأخرًا (فعليًا)")
         fig2.update_layout(xaxis_title="الجهة", yaxis_title="عدد المشاريع المتأخرة")
         st.plotly_chart(fig2, use_container_width=True)
